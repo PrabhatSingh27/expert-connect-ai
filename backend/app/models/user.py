@@ -1,5 +1,6 @@
 from sqlalchemy import Column, Integer, String
 from app.database.base import Base
+from sqlalchemy.orm import relationship
 
 class User(Base):
     __tablename__ = "users"
@@ -13,3 +14,9 @@ class User(Base):
     password_hash = Column(String, nullable=False)
 
     role = Column(String, nullable=False)
+
+    expert_profile = relationship(
+    "ExpertProfile",
+    back_populates="user",
+    uselist=False
+)
