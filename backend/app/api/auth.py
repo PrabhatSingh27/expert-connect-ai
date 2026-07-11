@@ -6,10 +6,11 @@ from app.services.auth_services import register_user
 from app.database.session import SessionLocal
 from fastapi import HTTPException
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_account
 from app.models.user import User
 
 from app.schemas.auth import (
+    AuthMe,
     UserLogin,
     Token
 )
@@ -17,10 +18,12 @@ from app.schemas.auth import (
 from app.services.auth_services import (
     authenticate_user
 )
+from app.services.expert_service import expert_login
 
 from app.core.security import (
     create_access_token
 )
+from app.core.rate_limit import rate_limit
 
 router = APIRouter(
     prefix="/auth",
@@ -41,6 +44,7 @@ def get_db():
 )
 def register(
     user: UserCreate,
+    _: None = Depends(rate_limit(limit=10, window_seconds=60)),
     db: Session = Depends(get_db)
 ):
     return register_user(db, user)
@@ -51,6 +55,7 @@ def register(
 )
 def login(
     user_data: UserLogin,
+    _: None = Depends(rate_limit(limit=10, window_seconds=60)),
     db: Session = Depends(get_db)
 ):
     user = authenticate_user(
@@ -60,28 +65,44 @@ def login(
     )
 
     if not user:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid credentials"
-        )
+        return expert_login(db, user_data)
+
+    normalized_role = (user.role or "customer").strip().lower()
+    account_type = "admin" if normalized_role == "admin" else "user"
 
     token = create_access_token(
         {
             "sub": user.email,
-            "role": user.role
+            "role": normalized_role,
+            "account_type": account_type,
         }
     )
 
     return {
         "access_token": token,
-        "token_type": "bearer"
+        "token_type": "bearer",
+        "accessToken": token,
+        "token": token,
+        "tokenType": "bearer",
+        "user_id": user.id,
+        "userId": user.id,
+        "role": normalized_role,
+        "account_type": account_type,
+        "accountType": account_type,
+        "is_expert": False,
+        "isExpert": False,
+        "is_admin": normalized_role == "admin",
+        "isAdmin": normalized_role == "admin",
+        "is_verified": None,
+        "isVerified": None,
+        "name": user.name,
     }
 
 @router.get(
     "/me",
-    response_model=UserResponse
+    response_model=AuthMe
 )
 def get_me(
-    current_user: User = Depends(get_current_user)
+    current_account: dict = Depends(get_current_account)
 ):
-    return current_user
+    return current_account

@@ -9,15 +9,17 @@ class Availability(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
-    user_id = Column(
-        Integer,
-        ForeignKey("users.id")
+    expert_id = Column(
+        Integer,  
+        ForeignKey("experts.id"),
+        nullable=False
     )
 
     day_of_week = Column(String, nullable=False)
-
     start_time = Column(String, nullable=False)
-
     end_time = Column(String, nullable=False)
 
-    user = relationship("User")
+    expert = relationship(
+        "Expert",
+        back_populates="availabilities"
+    )

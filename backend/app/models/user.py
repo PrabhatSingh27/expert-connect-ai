@@ -1,6 +1,8 @@
-from sqlalchemy import Column, Integer, String
-from app.database.base import Base
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
 from sqlalchemy.orm import relationship
+
+from app.database.base import Base
+
 
 class User(Base):
     __tablename__ = "users"
@@ -8,15 +10,15 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
 
     name = Column(String, nullable=False)
-
     email = Column(String, unique=True, nullable=False)
-
     password_hash = Column(String, nullable=False)
+    role = Column(String, nullable=False, default="customer", server_default="customer")
+    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    role = Column(String, nullable=False)
-
-    expert_profile = relationship(
-    "ExpertProfile",
-    back_populates="user",
-    uselist=False
-)
+    issues = relationship(
+        "Issue",
+        foreign_keys="Issue.customer_id",
+        back_populates="customer",
+        cascade="all, delete-orphan",
+    )

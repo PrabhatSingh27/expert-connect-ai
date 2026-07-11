@@ -1,4 +1,5 @@
 from sqlalchemy.orm import Session
+from fastapi import HTTPException
 
 from app.models.user import User
 from app.schemas.user import UserCreate
@@ -20,7 +21,10 @@ def register_user(
     )
 
     if existing_user:
-        raise ValueError("Email already registered")
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered",
+        )
 
     new_user = User(
         name=user_data.name,
@@ -28,7 +32,7 @@ def register_user(
         password_hash=hash_password(
             user_data.password
         ),
-        role=user_data.role
+        role=user_data.role or "customer"
     )
 
     db.add(new_user)

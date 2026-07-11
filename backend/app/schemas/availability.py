@@ -9,7 +9,7 @@ class AvailabilityCreate(BaseModel):
 
 class AvailabilityResponse(BaseModel):
     id: int
-    user_id: int
+    expert_id: int
     day_of_week: str
     start_time: str
     end_time: str

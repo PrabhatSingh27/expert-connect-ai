@@ -1,15 +1,14 @@
 from sqlalchemy.orm import Session
-from app.models.availability import Availability
 from fastapi import HTTPException
 from app.models.availability import Availability
 
 def create_availability(
     db: Session,
-    user_id: int,
+    expert_id: int,
     data
 ):
     availability = Availability(
-        user_id=user_id,
+        expert_id=expert_id,
         day_of_week=data.day_of_week,
         start_time=data.start_time,
         end_time=data.end_time
@@ -23,11 +22,11 @@ def create_availability(
 
 def get_my_availabilities(
     db,
-    user_id: int
+    expert_id: int
 ):
     return (
         db.query(Availability)
-        .filter(Availability.user_id == user_id)
+        .filter(Availability.expert_id == expert_id)
         .all()
     )
 
@@ -37,7 +36,7 @@ def get_all_availabilities(db):
 def update_availability(
     db,
     availability_id: int,
-    current_user_id: int,
+    current_expert_id: int,
     data
 ):
     availability = (
@@ -52,7 +51,7 @@ def update_availability(
             detail="Availability not found"
         )
 
-    if availability.user_id != current_user_id:
+    if availability.expert_id != current_expert_id:
         raise HTTPException(
             status_code=403,
             detail="Not authorized"
@@ -70,7 +69,7 @@ def update_availability(
 def delete_availability(
     db,
     availability_id: int,
-    current_user_id: int
+    current_expert_id: int
 ):
     availability = (
         db.query(Availability)
@@ -84,7 +83,7 @@ def delete_availability(
             detail="Availability not found"
         )
 
-    if availability.user_id != current_user_id:
+    if availability.expert_id != current_expert_id:
         raise HTTPException(
             status_code=403,
             detail="Not authorized"

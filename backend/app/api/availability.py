@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.auth.dependencies import get_current_user, get_db
-from app.models.user import User
+from app.auth.dependencies import get_current_expert, get_db
+from app.models.expert import Expert
 from app.schemas.availability import (
     AvailabilityCreate,
     AvailabilityResponse
@@ -27,12 +27,12 @@ router = APIRouter(
 )
 def create_slot(
     data: AvailabilityCreate,
-    current_user: User = Depends(get_current_user),
+    current_expert: Expert = Depends(get_current_expert),
     db: Session = Depends(get_db)
 ):
     return create_availability(
         db,
-        current_user.id,
+        current_expert.id,
         data
     )
 
@@ -41,12 +41,12 @@ def create_slot(
     response_model=list[AvailabilityResponse]
 )
 def my_availabilities(
-    current_user: User = Depends(get_current_user),
+    current_expert: Expert = Depends(get_current_expert),
     db: Session = Depends(get_db)
 ):
     return get_my_availabilities(
         db,
-        current_user.id
+        current_expert.id
     )
 
 @router.get(
@@ -65,24 +65,24 @@ def list_availabilities(
 def update_slot(
     availability_id: int,
     data: AvailabilityCreate,
-    current_user: User = Depends(get_current_user),
+    current_expert: Expert = Depends(get_current_expert),
     db: Session = Depends(get_db)
 ):
     return update_availability(
         db,
         availability_id,
-        current_user.id,
+        current_expert.id,
         data
     )
 
 @router.delete("/{availability_id}")
 def remove_slot(
     availability_id: int,
-    current_user: User = Depends(get_current_user),
+    current_expert: Expert = Depends(get_current_expert),
     db: Session = Depends(get_db)
 ):
     return delete_availability(
         db,
         availability_id,
-        current_user.id
+        current_expert.id
     )
