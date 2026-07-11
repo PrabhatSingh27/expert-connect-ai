@@ -1,0 +1,3 @@
+"use client";
+import { useEffect } from "react"; import { useRouter } from "next/navigation"; import { getMe } from "@/services"; import { LoadingState, PageShell } from "@/components/ui-kit";
+export default function DashboardPage(){ const router=useRouter(); useEffect(()=>{getMe().then(u=>router.replace(u.role==="admin"?"/admin":u.role==="operator"?"/operator":u.role==="expert"||u.role==="technician"?"/technician":"/customer")).catch(()=>router.replace("/login"));},[router]); return <PageShell><div className="mx-auto max-w-md px-4 py-20"><LoadingState label="Opening your dashboard"/></div></PageShell>; }

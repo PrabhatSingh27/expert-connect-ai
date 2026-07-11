@@ -1,0 +1,3 @@
+import { Activity, ClipboardList, Shield, Users } from "lucide-react";
+import { StatCard } from "@/components/ui-kit";
+export function Overview({ totalUsers, totalIssues, openIssues, activeExperts }: { totalUsers: number; totalIssues: number; openIssues: number; activeExperts: number }) { return <div className="grid gap-4 md:grid-cols-4"><StatCard label="Users" value={totalUsers} icon={<Users size={20}/>}/><StatCard label="Issues" value={totalIssues} icon={<ClipboardList size={20}/>}/><StatCard label="Open" value={openIssues} icon={<Activity size={20}/>}/><StatCard label="Experts" value={activeExperts} icon={<Shield size={20}/>}/></div>; }
