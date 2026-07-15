@@ -30,16 +30,6 @@ router = APIRouter(
 )
 
 
-def _merge_uploads(
-    multiple_files: list[UploadFile] | None,
-    single_file: UploadFile | None,
-) -> list[UploadFile] | None:
-    files = list(multiple_files or [])
-    if single_file:
-        files.append(single_file)
-    return files or None
-
-
 @router.post("/", response_model=IssueResponse)
 def create_new_issue(
     title: str = Form(...),
@@ -53,15 +43,9 @@ def create_new_issue(
     location: str | None = Form(default=None),
     pin_code: str | None = Form(default=None),
     address: str | None = Form(default=None),
-    image: UploadFile | None = File(default=None),
     images: list[UploadFile] | None = File(default=None),
-    video: UploadFile | None = File(default=None),
     videos: list[UploadFile] | None = File(default=None),
-    audio: UploadFile | None = File(default=None),
-    audio_files: list[UploadFile] | None = File(default=None),
-    audio_recording: UploadFile | None = File(default=None),
-    audio_recordings: list[UploadFile] | None = File(default=None),
-    files: list[UploadFile] | None = File(default=None),
+    audios: list[UploadFile] | None = File(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -84,11 +68,9 @@ def create_new_issue(
         db,
         current_user.id,
         data,
-        files=files,
-        image_files=_merge_uploads(images, image),
-        video_files=_merge_uploads(videos, video),
-        audio_files=_merge_uploads(audio_files, audio),
-        audio_recordings=_merge_uploads(audio_recordings, audio_recording),
+        image_files=images,
+        video_files=videos,
+        audio_files=audios,
     )
 
 @router.get("/", response_model=list[IssueSummaryResponse])
@@ -140,14 +122,9 @@ def edit_issue(
     location: str | None = Form(default=None),
     pin_code: str | None = Form(default=None),
     address: str | None = Form(default=None),
-    image: UploadFile | None = File(default=None),
     images: list[UploadFile] | None = File(default=None),
-    video: UploadFile | None = File(default=None),
     videos: list[UploadFile] | None = File(default=None),
-    audio: UploadFile | None = File(default=None),
-    audio_files: list[UploadFile] | None = File(default=None),
-    audio_recording: UploadFile | None = File(default=None),
-    audio_recordings: list[UploadFile] | None = File(default=None),
+    audios: list[UploadFile] | None = File(default=None),
     files: list[UploadFile] | None = File(default=None),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -178,10 +155,9 @@ def edit_issue(
         current_user.id,
         data,
         files=files,
-        image_files=_merge_uploads(images, image),
-        video_files=_merge_uploads(videos, video),
-        audio_files=_merge_uploads(audio_files, audio),
-        audio_recordings=_merge_uploads(audio_recordings, audio_recording),
+        image_files=images,
+        video_files=videos,
+        audio_files=audios,
     )
 
 @router.delete("/{issue_id}")

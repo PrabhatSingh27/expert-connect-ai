@@ -81,20 +81,12 @@ def login(
     return {
         "access_token": token,
         "token_type": "bearer",
-        "accessToken": token,
-        "token": token,
-        "tokenType": "bearer",
         "user_id": user.id,
-        "userId": user.id,
         "role": normalized_role,
         "account_type": account_type,
-        "accountType": account_type,
         "is_expert": False,
-        "isExpert": False,
         "is_admin": normalized_role == "admin",
-        "isAdmin": normalized_role == "admin",
         "is_verified": None,
-        "isVerified": None,
         "name": user.name,
     }
 

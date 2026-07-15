@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.models.expert import Expert
 from app.models.issue import Issue
+from app.services.assignment_service import assign_best_expert as assign_best_expert_to_issue
 from app.services.ai_classification_service import classify_issue_content
 from app.services.file_storage_service import (
     delete_issue_attachments_from_storage,
@@ -32,6 +33,17 @@ def _skills_to_text(skills) -> str | None:
     if isinstance(skills, list):
         return ", ".join(str(skill) for skill in skills if skill)
     return str(skills)
+
+
+def _apply_classification(issue: Issue, classification: dict) -> None:
+    issue.category = classification["category"]
+    issue.problem_type = classification["problem_type"]
+    issue.priority = classification["priority"]
+    issue.urgency = classification["urgency"]
+    issue.required_skills = _skills_to_text(classification["required_skills"])
+    issue.confidence_score = classification["confidence_score"]
+    issue.ai_explanation = classification["ai_explanation"]
+    issue.status = "ai_classified"
 
 
 def create_issue(
@@ -78,6 +90,14 @@ def create_issue(
         files=files,
     )
     db.commit()
+    db.refresh(issue)
+
+    classification = classify_issue_content(issue)
+    _apply_classification(issue, classification)
+    db.commit()
+    db.refresh(issue)
+
+    assign_best_expert_to_issue(issue, db)
     db.refresh(issue)
 
     return issue
@@ -173,14 +193,7 @@ def classify_issue(db: Session, issue_id: int, current_user_id: int):
     issue = get_customer_issue(db, issue_id, current_user_id)
     classification = classify_issue_content(issue)
 
-    issue.category = classification["category"]
-    issue.problem_type = classification["problem_type"]
-    issue.priority = classification["priority"]
-    issue.urgency = classification["urgency"]
-    issue.required_skills = _skills_to_text(classification["required_skills"])
-    issue.confidence_score = classification["confidence_score"]
-    issue.ai_explanation = classification["ai_explanation"]
-    issue.status = "ai_classified"
+    _apply_classification(issue, classification)
 
     db.commit()
     db.refresh(issue)

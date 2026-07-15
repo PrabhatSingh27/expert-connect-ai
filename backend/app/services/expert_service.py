@@ -118,20 +118,12 @@ def expert_login(db: Session, login_data):
     return {
         "access_token": access_token,
         "token_type": "bearer",
-        "accessToken": access_token,
-        "token": access_token,
-        "tokenType": "bearer",
         "expert_id": expert.id,
-        "expertId": expert.id,
         "role": "expert",
         "account_type": "expert",
-        "accountType": "expert",
         "is_expert": True,
-        "isExpert": True,
         "is_admin": False,
-        "isAdmin": False,
         "is_verified": expert.is_verified,
-        "isVerified": expert.is_verified,
         "name": expert.full_name,
     }
 

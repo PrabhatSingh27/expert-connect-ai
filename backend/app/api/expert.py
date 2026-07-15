@@ -57,9 +57,7 @@ def expert_signup(
     permanent_address: str = Form(default=""),
     experience_years: int = Form(default=0),
     profile_image: UploadFile | None = File(default=None),
-    profileImage: UploadFile | None = File(default=None),
     government_id_document: UploadFile | None = File(default=None),
-    governmentIdFile: UploadFile | None = File(default=None),
     _: None = Depends(rate_limit(limit=10, window_seconds=60)),
     db: Session = Depends(get_db)
 ):
@@ -68,14 +66,14 @@ def expert_signup(
         email=email,
         phone=phone,
         government_id=government_id,
-        government_id_file_url=save_upload_file(government_id_document or governmentIdFile, "experts/government_ids"),
+        government_id_file_url=save_upload_file(government_id_document, "experts/government_ids"),
         skills=skills,
         service_area=service_area,
         service_city=service_city,
         service_pincodes=service_pincodes,
         bio=bio,
         permanent_address=permanent_address,
-        profile_image_url=save_upload_file(profile_image or profileImage, "experts/profile_images"),
+        profile_image_url=save_upload_file(profile_image, "experts/profile_images"),
         experience_years=experience_years,
         password=password,
     )
@@ -137,9 +135,7 @@ def update_profile(
     permanent_address: str | None = Form(default=None),
     experience_years: int | None = Form(default=None),
     profile_image: UploadFile | None = File(default=None),
-    profileImage: UploadFile | None = File(default=None),
     government_id_document: UploadFile | None = File(default=None),
-    governmentIdFile: UploadFile | None = File(default=None),
     current_expert: Expert = Depends(get_current_expert),
     db: Session = Depends(get_db)
 ):
@@ -153,8 +149,8 @@ def update_profile(
         "bio": bio,
         "permanent_address": permanent_address,
         "experience_years": experience_years,
-        "profile_image_url": save_upload_file(profile_image or profileImage, "experts/profile_images"),
-        "government_id_file_url": save_upload_file(government_id_document or governmentIdFile, "experts/government_ids"),
+        "profile_image_url": save_upload_file(profile_image, "experts/profile_images"),
+        "government_id_file_url": save_upload_file(government_id_document, "experts/government_ids"),
     }
     profile_data = ExpertUpdate.model_validate(
         {key: value for key, value in update_payload.items() if value is not None}
