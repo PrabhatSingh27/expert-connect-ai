@@ -1,0 +1,19 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root { --background: #f4f7fb; --foreground: #07111f; --line: rgba(15, 23, 42, 0.1); --radius: 1.25rem; }
+.dark { --background: #07111f; --foreground: #f8fafc; --line: rgba(255,255,255,.12); }
+@theme inline { --font-sans: var(--font-geist-sans); --font-mono: var(--font-geist-mono); --color-background: var(--background); --color-foreground: var(--foreground); --radius-lg: var(--radius); }
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 12% 8%, rgba(45,212,191,.20), transparent 30rem), radial-gradient(circle at 86% 14%, rgba(96,165,250,.18), transparent 28rem), linear-gradient(135deg,#f8fafc,#eef6ff 44%,#f7f4ff); color: var(--foreground); }
+.dark body { background: radial-gradient(circle at 12% 8%, rgba(45,212,191,.16), transparent 30rem), radial-gradient(circle at 86% 14%, rgba(96,165,250,.14), transparent 28rem), linear-gradient(135deg,#07111f,#0f172a 54%,#111827); }
+button,input,textarea,select { font: inherit; } button { cursor: pointer; } button:disabled { cursor: not-allowed; }
+.input { width: 100%; border-radius: 1rem; border: 1px solid var(--line); background: rgba(255,255,255,.72); padding: .86rem .95rem; color: rgb(15 23 42); outline: none; transition: border-color .16s, box-shadow .16s, background .16s; }
+.input:focus { border-color: rgba(15,118,110,.55); background: rgba(255,255,255,.92); box-shadow: 0 0 0 4px rgba(45,212,191,.16); }
+.dark .input { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.06); color: white; }
+.dark .input:focus { border-color: rgba(45,212,191,.58); background: rgba(255,255,255,.09); box-shadow: 0 0 0 4px rgba(45,212,191,.12); }
+.app-grid { background-image: linear-gradient(rgba(15,23,42,.045) 1px, transparent 1px), linear-gradient(90deg, rgba(15,23,42,.045) 1px, transparent 1px); background-size: 40px 40px; }
