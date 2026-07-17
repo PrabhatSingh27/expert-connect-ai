@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import { Brain, CalendarDays, CheckCircle2, Clock, FileText, MapPin, PlusCircle, Sparkles } from "lucide-react";
+import { Brain, CalendarDays, CheckCircle2, Clock, FileText, MapPin, PlusCircle } from "lucide-react";
 import { AiResultCard } from "@/components/ai-result-card";
 import { MediaUploadManager, type MediaUploadValue } from "@/components/media-upload-manager";
 import { ToastStack } from "@/components/toast-stack";
 import { useToast } from "@/hooks/use-toast";
 import { Card, DashboardShell, EmptyState, LoadingState, StatCard, StatusPill } from "@/components/ui-kit";
-import { classifyIssue, createIssue, deleteIssue, listIssues, type AiResult, type Issue } from "@/services";
+import { createIssue, deleteIssue, getMe, listIssues, updateMe, type AiResult, type AuthUser, type Issue } from "@/services";
 const emptyForm = { title:"", description:"", preferredVisitDate:"", preferredTime:"", location:"", address:"", pinCode:"" };
 const emptyMedia: MediaUploadValue = { imageIds: [], mediaIds: [], files: [], isUploading: false, hasErrors: false };
 const phases = ["Uploading...", "Analyzing with AI...", "Detecting Problem...", "Finding Category...", "Setting Priority...", "Assigning Expert..."];
@@ -14,35 +14,21 @@ export default function CustomerPage(){
     const [issues,setIssues]=useState<Issue[]>([]); 
     const [loading,setLoading]=useState(true); 
     const [saving,setSaving]=useState(false); 
-    const [classifying,setClassifying]=useState(false); 
     const [form,setForm]=useState(emptyForm); 
     const [media,setMedia]=useState(emptyMedia); 
     const [aiPreview,setAiPreview]=useState<AiResult>(); 
+    const [profile,setProfile]=useState<AuthUser>();
+    const [profileEdit,setProfileEdit]=useState(false);
+    const [profileForm,setProfileForm]=useState({name:"",email:"",phone:""});
     const [phase,setPhase]=useState(-1); 
     const {toasts,toast,closeToast}=useToast(); 
     async function refresh(){setLoading(true); 
-        try{setIssues(await listIssues({mine:true}));
+        try{const [issuesResult,profileResult]=await Promise.allSettled([listIssues({mine:true}),getMe()]); if(issuesResult.status==="fulfilled")setIssues(issuesResult.value); else setIssues([]); if(profileResult.status==="fulfilled"){setProfile(profileResult.value);setProfileForm({name:profileResult.value.name||"",email:profileResult.value.email||"",phone:profileResult.value.phone||profileResult.value.phone_number||""});}
     }catch{setIssues([]);}finally{setLoading(false);
 
     }} useEffect(()=>{refresh();
 
     },[]); const active=useMemo(()=>issues.filter(i=>!["closed","completed","rejected"].includes(i.status)).length,[issues]); 
-    async function runClassification(){ if(!form.title.trim()||!form.description.trim()) 
-        return toast("Title and description are required.","error"); 
-        if(media.isUploading) 
-            return toast("Please wait until media uploads finish.","info"); 
-        if(media.hasErrors) 
-            return toast("Retry or remove failed uploads first.","error"); 
-        setClassifying(true); setPhase(1); 
-        try{ 
-            const result=await classifyIssue({title:form.title,description:form.description,location:form.location,mediaIds:media.mediaIds}, media.mediaIds.length?[]:media.files); 
-            setAiPreview(result); 
-            toast("AI classification completed.","success"); 
-        }catch(err)
-        { toast(err instanceof Error?err.message:"AI classification failed","error"); 
-
-        }finally{setClassifying(false); 
-            setPhase(-1);} } 
             async function submit(e:React.FormEvent<HTMLFormElement>){e.preventDefault(); 
                 if(media.isUploading) 
                     return toast("Media is still uploading.","info"); 
@@ -74,9 +60,9 @@ export default function CustomerPage(){
                     required/><input className="input" placeholder="PIN code" value={form.pinCode} 
                     onChange={e=>setForm({...form,pinCode:e.target.value})} 
                     required/></div><textarea className="input min-h-20" placeholder="Full address" value={form.address} onChange={e=>setForm({...form,address:e.target.value})} 
-                    required/><MediaUploadManager onChange={setMedia} onToast={toast}/><button type="button" onClick={runClassification} disabled={classifying} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-teal-400/25 bg-teal-400/10 px-5 py-3 font-black text-teal-800"><Sparkles size={18}/>{classifying?"Classifying with AI...":"Classify with AI"}</button>{phase>=0&&<Phase active={phase}/>} 
+                    required/><MediaUploadManager onChange={setMedia} onToast={toast}/>{phase>=0&&<Phase active={phase}/>} 
                     
-                    {aiPreview&&<AiResultCard result={aiPreview}/>}<button disabled={saving} className="w-full rounded-2xl bg-slate-950 px-5 py-3 font-black text-white">{saving?"Submitting...":"Submit issue"}</button></form></Card><div className="space-y-4">{loading?<LoadingState label="Loading issues"/>:issues.length===0?<EmptyState title="No issues yet" text="Your submitted issues will appear here."/>:issues.map(issue=><Card key={issue.id} className="p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row"><div><h3 className="text-lg font-black">{issue.title}</h3><p className="mt-1 text-sm text-slate-500">{issue.description}</p></div><StatusPill tone={issue.status==="rejected"?"danger":issue.status==="completed"||issue.status==="closed"?"good":"info"}>{issue.status.replaceAll("_"," ")}</StatusPill></div><div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-500"><span className="inline-flex items-center gap-1"><MapPin size={15}/>{issue.location||issue.pinCode}</span></div><div className="mt-4"><AiResultCard result={issue.aiResult}/></div>{issue.status==="submitted"&&<button onClick={async()=>{await deleteIssue(issue.id); refresh();}} className="mt-4 rounded-xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-600">Delete issue</button>}</Card>)}</div></div></DashboardShell> }
+                    {aiPreview&&<AiResultCard result={aiPreview}/>}<button disabled={saving} className="w-full rounded-2xl bg-slate-950 px-5 py-3 font-black text-white">{saving?"Submitting...":"Submit issue"}</button></form></Card><div className="space-y-4"><Card className="p-5"><div className="mb-3 flex items-center justify-between"><div><h2 className="font-black">My profile</h2><p className="text-sm text-slate-500">Keep your contact details current.</p></div><button onClick={()=>setProfileEdit(!profileEdit)} className="rounded-lg border px-3 py-2 text-sm font-bold">Edit</button></div>{profileEdit?<form onSubmit={async e=>{e.preventDefault();try{await updateMe(profileForm);toast("Profile updated.","success");setProfileEdit(false);refresh();}catch(err){toast(err instanceof Error?err.message:"Profile update failed","error");}}} className="grid gap-3"><input className="input" value={profileForm.name} onChange={e=>setProfileForm({...profileForm,name:e.target.value})} required/><input className="input" type="email" value={profileForm.email} onChange={e=>setProfileForm({...profileForm,email:e.target.value})} required/><input className="input" value={profileForm.phone} placeholder="Phone" onChange={e=>setProfileForm({...profileForm,phone:e.target.value})}/><button className="rounded-xl bg-slate-950 px-4 py-3 font-bold text-white">Save profile</button></form>:<div className="text-sm text-slate-600"><p className="font-bold text-slate-950">{profile?.name||"Customer"}</p><p>{profile?.email}</p>{profile?.phone&&<p>{profile.phone}</p>}</div>}</Card>{loading?<LoadingState label="Loading issues"/>:issues.length===0?<EmptyState title="No issues yet" text="Your submitted issues will appear here."/>:issues.map(issue=><Card key={issue.id} className="p-5"><div className="flex flex-col justify-between gap-3 sm:flex-row"><div><h3 className="text-lg font-black">{issue.title}</h3><p className="mt-1 text-sm text-slate-500">{issue.description}</p></div><StatusPill tone={issue.status==="rejected"?"danger":issue.status==="completed"||issue.status==="closed"?"good":"info"}>{issue.status.replaceAll("_"," ")}</StatusPill></div><div className="mt-4 flex flex-wrap gap-3 text-sm text-slate-500"><span className="inline-flex items-center gap-1"><MapPin size={15}/>{issue.location||issue.pinCode}</span></div><div className="mt-4"><AiResultCard result={issue.aiResult}/></div>{issue.status==="submitted"&&<button onClick={async()=>{await deleteIssue(issue.id); refresh();}} className="mt-4 rounded-xl border border-rose-200 px-4 py-2 text-sm font-bold text-rose-600">Delete issue</button>}</Card>)}</div></div></DashboardShell> }
 function Phase({
 
     active}:{active:number})
