@@ -75,7 +75,7 @@ def validate_file(file: UploadFile, file_type: str) -> int:
 
     if extension not in config["extensions"]:
         raise HTTPException(
-            status_code=400,
+            status_code=415,
             detail=f"Unsupported {file_type} format.",
         )
 
@@ -87,7 +87,7 @@ def validate_file(file: UploadFile, file_type: str) -> int:
 
     if config["mime_prefix"] and not content_type.startswith(config["mime_prefix"]) and not is_audio_blob:
         raise HTTPException(
-            status_code=400,
+            status_code=415,
             detail=f"Only {file_type} files are allowed.",
         )
 
@@ -98,11 +98,42 @@ def validate_file(file: UploadFile, file_type: str) -> int:
     if file_size > config["max_size"]:
         max_mb = config["max_size"] // (1024 * 1024)
         raise HTTPException(
-            status_code=400,
+            status_code=413,
             detail=f"{file_type.capitalize()} files must not exceed {max_mb} MB.",
         )
 
     return file_size
+
+
+def _has_upload(file: UploadFile | None) -> bool:
+    return bool(file and (file.filename or file.content_type))
+
+
+def validate_single_issue_media_uploads(
+    image: UploadFile | None = None,
+    video: UploadFile | None = None,
+    audio: UploadFile | None = None,
+) -> dict[str, UploadFile | None]:
+    if _has_upload(image):
+        validate_file(image, "image")
+    else:
+        image = None
+
+    if _has_upload(video):
+        validate_file(video, "video")
+    else:
+        video = None
+
+    if _has_upload(audio):
+        validate_file(audio, "audio")
+    else:
+        audio = None
+
+    return {
+        "image": image,
+        "video": video,
+        "audio": audio,
+    }
 
 
 def compress_file_if_possible(file_path: Path, file_type: str) -> None:
@@ -194,38 +225,20 @@ def save_issue_attachment(
     return attachment
 
 
-def save_issue_attachments(
+def save_issue_media_files(
     db: Session,
     issue: Issue,
-    files: list[UploadFile] | None,
-    file_type: str | None = None,
-) -> list[IssueAttachment]:
-    if not files:
-        return []
-
-    attachments = []
-    for file in files:
-        if file:
-            attachments.append(save_issue_attachment(db, issue, file, file_type=file_type))
-
-    return attachments
-
-
-def save_issue_media_groups(
-    db: Session,
-    issue: Issue,
-    image_files: list[UploadFile] | None = None,
-    video_files: list[UploadFile] | None = None,
-    audio_files: list[UploadFile] | None = None,
-    audio_recordings: list[UploadFile] | None = None,
-    files: list[UploadFile] | None = None,
+    image: UploadFile | None = None,
+    video: UploadFile | None = None,
+    audio: UploadFile | None = None,
 ) -> list[IssueAttachment]:
     attachments = []
-    attachments.extend(save_issue_attachments(db, issue, image_files, file_type="image"))
-    attachments.extend(save_issue_attachments(db, issue, video_files, file_type="video"))
-    attachments.extend(save_issue_attachments(db, issue, audio_files, file_type="audio"))
-    attachments.extend(save_issue_attachments(db, issue, audio_recordings, file_type="audio"))
-    attachments.extend(save_issue_attachments(db, issue, files))
+    if image:
+        attachments.append(save_issue_attachment(db, issue, image, file_type="image"))
+    if video:
+        attachments.append(save_issue_attachment(db, issue, video, file_type="video"))
+    if audio:
+        attachments.append(save_issue_attachment(db, issue, audio, file_type="audio"))
     return attachments
 
 

@@ -19,7 +19,6 @@ from app.schemas.issue import IssueResponse, IssueStatusUpdate
 from app.core.rate_limit import rate_limit
 
 from app.services.expert_service import (
-    accept_issue,
     create_expert_account,
     expert_login,
     get_expert_issue,
@@ -28,7 +27,6 @@ from app.services.expert_service import (
     update_my_profile,
     get_all_experts,
     get_expert_by_id,
-    reject_issue,
     update_issue_status,
 )
 from app.services.file_storage_service import save_upload_file
@@ -194,30 +192,6 @@ def assigned_issue_details(
     db: Session = Depends(get_db)
 ):
     return get_expert_issue(db, current_expert.id, issue_id)
-
-
-@router.patch(
-    "/issues/{issue_id}/accept",
-    response_model=IssueResponse
-)
-def accept_assigned_issue(
-    issue_id: int,
-    current_expert: Expert = Depends(get_current_expert),
-    db: Session = Depends(get_db)
-):
-    return accept_issue(db, current_expert.id, issue_id)
-
-
-@router.patch(
-    "/issues/{issue_id}/reject",
-    response_model=IssueResponse
-)
-def reject_assigned_issue(
-    issue_id: int,
-    current_expert: Expert = Depends(get_current_expert),
-    db: Session = Depends(get_db)
-):
-    return reject_issue(db, current_expert.id, issue_id)
 
 
 @router.patch(

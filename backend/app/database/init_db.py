@@ -110,7 +110,7 @@ def ensure_database_schema() -> None:
         if column_name not in issue_columns:
             _execute(f"ALTER TABLE issues ADD COLUMN {column_name} {column_definition}")
     if "status" in issue_columns:
-        _execute("ALTER TABLE issues ALTER COLUMN status SET DEFAULT 'open'")
+        _execute("ALTER TABLE issues ALTER COLUMN status SET DEFAULT 'submitted'")
 
     attachment_columns = _column_names("issue_attachments")
     if attachment_columns and "file_size" not in attachment_columns:

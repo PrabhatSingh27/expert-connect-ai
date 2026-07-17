@@ -1,5 +1,7 @@
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.issue import IssueStatus
+
 
 class AccountStatusUpdate(BaseModel):
     is_active: bool = Field(alias="isActive")
@@ -7,6 +9,26 @@ class AccountStatusUpdate(BaseModel):
 
 class ExpertVerificationUpdate(BaseModel):
     is_verified: bool = Field(alias="isVerified")
+
+
+class IssueExpertOverride(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    expert_id: int = Field(alias="expertId")
+
+
+class IssuePriorityOverride(BaseModel):
+    priority: str | None = None
+    urgency: str | None = None
+
+
+class IssueOverride(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    assigned_expert_id: int | None = Field(default=None, alias="assignedExpertId")
+    priority: str | None = None
+    urgency: str | None = None
+    status: IssueStatus | None = None
 
 
 class AnalyticsResponse(BaseModel):

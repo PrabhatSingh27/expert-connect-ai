@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Optional
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.orm import Session
@@ -13,6 +14,7 @@ from app.schemas.issue import (
     IssueSummaryResponse,
 )
 from app.services.issue_service import (
+    assign_best_expert_any,
     classify_issue,
     create_issue,
     get_all_issues,
@@ -22,6 +24,7 @@ from app.services.issue_service import (
     update_issue,
     delete_issue
 )
+from app.services.file_storage_service import validate_single_issue_media_uploads
 from app.services.matching_service import match_experts_for_issue
 
 router = APIRouter(
@@ -31,7 +34,7 @@ router = APIRouter(
 
 
 @router.post("/", response_model=IssueResponse)
-def create_new_issue(
+async def create_new_issue(
     title: str = Form(...),
     description: str = Form(...),
     category: str | None = Form(default=None),
@@ -43,9 +46,9 @@ def create_new_issue(
     location: str | None = Form(default=None),
     pin_code: str | None = Form(default=None),
     address: str | None = Form(default=None),
-    images: list[UploadFile] | None = File(default=None),
-    videos: list[UploadFile] | None = File(default=None),
-    audios: list[UploadFile] | None = File(default=None),
+    image: Optional[UploadFile] = File(None, description="Upload one image file"),
+    video: Optional[UploadFile] = File(None, description="Upload one video file"),
+    audio: Optional[UploadFile] = File(None, description="Upload one audio file or recording"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -64,13 +67,18 @@ def create_new_issue(
             "address": address,
         }
     )
+    media = validate_single_issue_media_uploads(
+        image=image,
+        video=video,
+        audio=audio,
+    )
     return create_issue(
         db,
         current_user.id,
         data,
-        image_files=images,
-        video_files=videos,
-        audio_files=audios,
+        image=media["image"],
+        video=media["video"],
+        audio=media["audio"],
     )
 
 @router.get("/", response_model=list[IssueSummaryResponse])
@@ -108,7 +116,7 @@ def get_issue(
     return get_customer_issue(db, issue_id, current_user.id)
 
 @router.put("/{issue_id}", response_model=IssueResponse)
-def edit_issue(
+async def edit_issue(
     issue_id: int,
     title: str | None = Form(default=None),
     description: str | None = Form(default=None),
@@ -122,10 +130,9 @@ def edit_issue(
     location: str | None = Form(default=None),
     pin_code: str | None = Form(default=None),
     address: str | None = Form(default=None),
-    images: list[UploadFile] | None = File(default=None),
-    videos: list[UploadFile] | None = File(default=None),
-    audios: list[UploadFile] | None = File(default=None),
-    files: list[UploadFile] | None = File(default=None),
+    image: Optional[UploadFile] = File(default=None, description="Upload one image file"),
+    video: Optional[UploadFile] = File(default=None, description="Upload one video file"),
+    audio: Optional[UploadFile] = File(default=None, description="Upload one audio file or recording"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -149,15 +156,25 @@ def edit_issue(
             if value is not None
         }
     )
+    media = validate_single_issue_media_uploads(
+        image=image,
+        video=video,
+        audio=audio,
+    )
+    for upload in media.values():
+        if upload is not None:
+            await upload.read()
+            await upload.seek(0)
+
     return update_issue(
         db,
         issue_id,
         current_user.id,
         data,
-        files=files,
-        image_files=images,
-        video_files=videos,
-        audio_files=audios,
+        image=media["image"],
+        video=media["video"],
+        audio=media["audio"],
+        allow_admin=(current_user.role or "").strip().lower() == "admin",
     )
 
 @router.delete("/{issue_id}")
@@ -194,5 +211,16 @@ def assign_best_matching_expert(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    return assign_best_expert(db, issue_id, current_user.id)
+
+
+@router.post("/{issue_id}/assign", response_model=IssueResponse)
+def assign_matching_expert_alias(
+    issue_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if (current_user.role or "").strip().lower() == "admin":
+        return assign_best_expert_any(db, issue_id)
     return assign_best_expert(db, issue_id, current_user.id)
 

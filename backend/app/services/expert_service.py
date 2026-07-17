@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.models.expert import Expert
 from app.models.issue import Issue
 from app.services.notification_service import notify_issue_status_changed
+from app.services.websocket_manager import publish_issue_update
 from app.core.security import (
     hash_password,
     verify_password,
@@ -214,35 +215,15 @@ def get_expert_issue(db: Session, expert_id: int, issue_id: int):
     return issue
 
 
-def accept_issue(db: Session, expert_id: int, issue_id: int):
-    issue = get_expert_issue(db, expert_id, issue_id)
-    issue.status = "accepted"
-    db.commit()
-    db.refresh(issue)
-    notify_issue_status_changed(issue, "accepted")
-    return issue
-
-
-def reject_issue(db: Session, expert_id: int, issue_id: int):
-    issue = get_expert_issue(db, expert_id, issue_id)
-    issue.status = "waiting_for_assignment"
-    issue.assigned_expert_id = None
-    issue.assigned_at = None
-    db.commit()
-    db.refresh(issue)
-    notify_issue_status_changed(issue, "cancelled")
-    return issue
-
-
 def update_issue_status(db: Session, expert_id: int, issue_id: int, status: str):
     allowed_statuses = {
-        "open",
+        "submitted",
         "ai_classified",
-        "waiting_for_assignment",
+        "operator_review",
+        "need_more_info",
         "assigned",
-        "accepted",
         "in_progress",
-        "resolved",
+        "completed",
         "closed",
     }
 
@@ -257,6 +238,7 @@ def update_issue_status(db: Session, expert_id: int, issue_id: int, status: str)
     db.commit()
     db.refresh(issue)
     notify_issue_status_changed(issue, status)
+    publish_issue_update(issue, "issue_status_updated")
     return issue
 
 
@@ -265,7 +247,7 @@ def get_completed_jobs(db: Session, expert_id: int):
         db.query(Issue)
         .filter(
             Issue.assigned_expert_id == expert_id,
-            Issue.status.in_(["resolved", "closed"]),
+            Issue.status.in_(["completed", "closed"]),
         )
         .all()
     )

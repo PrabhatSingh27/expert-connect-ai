@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 
 from app.models.expert import Expert
 from app.models.issue import Issue
@@ -9,20 +10,22 @@ from app.services.assignment_service import assign_best_expert as assign_best_ex
 from app.services.ai_classification_service import classify_issue_content
 from app.services.file_storage_service import (
     delete_issue_attachments_from_storage,
-    save_issue_media_groups,
+    save_issue_media_files,
 )
 from app.services.matching_service import match_experts_for_issue
-from app.services.notification_service import notify_expert_assigned
+from app.services.notification_service import notify_expert_assigned, notify_issue_status_changed
+from app.services.websocket_manager import publish_issue_update
 
 
 ALLOWED_ISSUE_STATUSES = {
-    "open",
+    "submitted",
     "ai_classified",
     "waiting_for_assignment",
+    "operator_review",
+    "need_more_info",
     "assigned",
-    "accepted",
     "in_progress",
-    "resolved",
+    "completed",
     "closed",
 }
 
@@ -50,11 +53,9 @@ def create_issue(
     db: Session,
     customer_id: int,
     data,
-    files=None,
-    image_files=None,
-    video_files=None,
-    audio_files=None,
-    audio_recordings=None,
+    image=None,
+    video=None,
+    audio=None,
 ):
     issue = Issue(
         customer_id=customer_id,
@@ -73,43 +74,52 @@ def create_issue(
         image_path=data.image_path,
         video_path=data.video_path,
         audio_path=data.audio_path,
-        status="open",
+        status="submitted",
     )
 
     db.add(issue)
-    db.commit()
-    db.refresh(issue)
+    # Allocate the ID before storage so media can be written beneath the
+    # issue-specific directory; the following commit persists the submitted
+    # issue together with its media paths.
+    db.flush()
 
-    save_issue_media_groups(
+    save_issue_media_files(
         db,
         issue,
-        image_files=image_files,
-        video_files=video_files,
-        audio_files=audio_files,
-        audio_recordings=audio_recordings,
-        files=files,
+        image=image,
+        video=video,
+        audio=audio,
     )
     db.commit()
     db.refresh(issue)
 
+    # The issue now has an ID and its stored media paths, so classify and assign
+    # against the complete persisted record before making the final commit.
     classification = classify_issue_content(issue)
     _apply_classification(issue, classification)
+
+    assigned_expert = assign_best_expert_to_issue(issue, db, commit=False)
+    if assigned_expert is None:
+        issue.status = "waiting_for_assignment"
+
     db.commit()
     db.refresh(issue)
-
-    assign_best_expert_to_issue(issue, db)
-    db.refresh(issue)
+    if assigned_expert is not None:
+        notify_expert_assigned(assigned_expert, issue)
+        publish_issue_update(issue, "expert_assigned")
+    publish_issue_update(issue, "issue_created")
 
     return issue
 
 
 def get_all_issues(db: Session):
-    return db.query(Issue).all()
+    return db.query(Issue).options(joinedload(Issue.assigned_expert)).all()
 
 
 def get_my_issues(db: Session, customer_id: int):
     return (
         db.query(Issue)
+        .options(joinedload(Issue.assigned_expert))
         .filter(Issue.customer_id == customer_id)
         .all()
     )
@@ -144,13 +154,12 @@ def update_issue(
     issue_id: int,
     current_user_id: int,
     data,
-    files=None,
-    image_files=None,
-    video_files=None,
-    audio_files=None,
-    audio_recordings=None,
+    image=None,
+    video=None,
+    audio=None,
+    allow_admin: bool = False,
 ):
-    issue = get_customer_issue(db, issue_id, current_user_id)
+    issue = get_issue_by_id(db, issue_id) if allow_admin else get_customer_issue(db, issue_id, current_user_id)
 
     update_data = data.model_dump(exclude_unset=True)
     if "status" in update_data and update_data["status"] not in ALLOWED_ISSUE_STATUSES:
@@ -164,17 +173,16 @@ def update_issue(
             value = _skills_to_text(value)
         setattr(issue, field, value)
 
-    save_issue_media_groups(
+    save_issue_media_files(
         db,
         issue,
-        image_files=image_files,
-        video_files=video_files,
-        audio_files=audio_files,
-        audio_recordings=audio_recordings,
-        files=files,
+        image=image,
+        video=video,
+        audio=audio,
     )
     db.commit()
     db.refresh(issue)
+    publish_issue_update(issue, "issue_updated")
 
     return issue
 
@@ -201,6 +209,51 @@ def classify_issue(db: Session, issue_id: int, current_user_id: int):
     return issue
 
 
+def update_issue_status_any(db: Session, issue_id: int, status: str):
+    if status not in ALLOWED_ISSUE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid issue status",
+        )
+
+    issue = get_issue_by_id(db, issue_id)
+    issue.status = status
+    db.commit()
+    db.refresh(issue)
+    notify_issue_status_changed(issue, status)
+    publish_issue_update(issue, "issue_status_updated")
+    return issue
+
+
+def assign_best_expert_any(db: Session, issue_id: int):
+    issue = get_issue_by_id(db, issue_id)
+    matches = match_experts_for_issue(db, issue, limit=1)
+
+    if not matches:
+        raise HTTPException(
+            status_code=404,
+            detail="No matching experts found",
+        )
+
+    expert = db.query(Expert).filter(Expert.id == matches[0]["expert_id"]).first()
+    if not expert:
+        raise HTTPException(
+            status_code=404,
+            detail="Matched expert not found",
+        )
+
+    issue.assigned_expert_id = expert.id
+    issue.assigned_at = datetime.now(timezone.utc)
+    issue.status = "in_progress"
+
+    db.commit()
+    db.refresh(issue)
+    notify_expert_assigned(expert, issue)
+    publish_issue_update(issue, "expert_assigned")
+
+    return issue
+
+
 def assign_best_expert(db: Session, issue_id: int, current_user_id: int):
     issue = get_customer_issue(db, issue_id, current_user_id)
     matches = match_experts_for_issue(db, issue, limit=1)
@@ -220,10 +273,11 @@ def assign_best_expert(db: Session, issue_id: int, current_user_id: int):
 
     issue.assigned_expert_id = expert.id
     issue.assigned_at = datetime.now(timezone.utc)
-    issue.status = "assigned"
+    issue.status = "in_progress"
 
     db.commit()
     db.refresh(issue)
     notify_expert_assigned(expert, issue)
+    publish_issue_update(issue, "expert_assigned")
 
     return issue

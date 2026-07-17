@@ -14,7 +14,7 @@ def create_review(db: Session, issue_id: int, customer_id: int, data):
     if issue.customer_id != customer_id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    if issue.status not in {"resolved", "closed"}:
+    if issue.status not in {"completed", "closed"}:
         raise HTTPException(status_code=400, detail="Reviews can be submitted only after resolution")
 
     if not issue.assigned_expert_id:

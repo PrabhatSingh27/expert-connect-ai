@@ -6,6 +6,7 @@ from app.models.availability import Availability
 from app.models.expert import Expert
 from app.models.issue import Issue
 from app.services.notification_service import notify_expert_assigned
+from app.services.websocket_manager import publish_issue_update
 
 
 def _tokens(value: str | None) -> set[str]:
@@ -71,7 +72,13 @@ def get_available_experts(db: Session, issue: Issue) -> list[Expert]:
     ]
 
 
-def assign_best_expert(issue: Issue, db: Session) -> Expert | None:
+def assign_best_expert(
+    issue: Issue,
+    db: Session,
+    *,
+    commit: bool = True,
+) -> Expert | None:
+    """Assign the best available expert, optionally deferring the commit to a caller's pipeline."""
     experts = sorted(
         get_available_experts(db, issue),
         key=lambda expert: expert.experience_years or 0,
@@ -86,9 +93,11 @@ def assign_best_expert(issue: Issue, db: Session) -> Expert | None:
     issue.assigned_at = datetime.now(timezone.utc)
     issue.status = "assigned"
 
-    db.commit()
-    db.refresh(issue)
-    notify_expert_assigned(selected_expert, issue)
+    if commit:
+        db.commit()
+        db.refresh(issue)
+        notify_expert_assigned(selected_expert, issue)
+        publish_issue_update(issue, "expert_assigned")
 
     return selected_expert
 
@@ -102,7 +111,7 @@ def get_expert_load(db: Session, expert_id: int):
         db.query(Issue)
         .filter(
             Issue.assigned_expert_id == expert_id,
-            Issue.status.in_(["assigned", "accepted", "in_progress"]),
+            Issue.status.in_(["assigned", "in_progress"]),
         )
         .count()
     )

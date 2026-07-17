@@ -11,6 +11,13 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+
+class UserUpdate(BaseModel):
+    """Profile fields a customer may change after registration."""
+
+    name: str | None = None
+
+
 class UserResponse(BaseModel):
     id: int
     name: str

@@ -36,7 +36,7 @@ class Issue(Base):
     video_path = Column(String, nullable=True)
     audio_path = Column(String, nullable=True)
 
-    status = Column(String, nullable=False, default="open", server_default="open")
+    status = Column(String, nullable=False, default="submitted", server_default="submitted")
 
     assigned_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

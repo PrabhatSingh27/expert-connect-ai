@@ -1,9 +1,16 @@
+from datetime import datetime, timezone
+import logging
+
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.models.expert import Expert
 from app.models.issue import Issue
 from app.models.user import User
+from app.services.websocket_manager import publish_issue_update
+
+
+logger = logging.getLogger(__name__)
 
 
 def list_users(db: Session):
@@ -23,7 +30,7 @@ def list_expert_applications(db: Session):
 
 
 def list_issues(db: Session):
-    return db.query(Issue).all()
+    return db.query(Issue).options(joinedload(Issue.assigned_expert)).all()
 
 
 def set_expert_verified(db: Session, expert_id: int, is_verified: bool):
@@ -73,3 +80,99 @@ def get_analytics(db: Session):
         "totalIssues": db.query(Issue).count(),
         "issuesByStatus": issues_by_status,
     }
+
+
+def override_issue_expert(db: Session, issue_id: int, expert_id: int):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        return None
+
+    expert = db.query(Expert).filter(Expert.id == expert_id).first()
+    if not expert:
+        return None
+
+    previous_expert_id = issue.assigned_expert_id
+    issue.assigned_expert_id = expert.id
+    issue.assigned_at = datetime.now(timezone.utc)
+    issue.status = "in_progress"
+
+    db.commit()
+    db.refresh(issue)
+
+    logger.info(
+        "admin_override_issue_expert issue_id=%s previous_expert_id=%s new_expert_id=%s",
+        issue.id,
+        previous_expert_id,
+        expert.id,
+    )
+    publish_issue_update(
+        issue,
+        "admin_override",
+        previous_expert_id=previous_expert_id,
+    )
+    return issue
+
+
+def override_issue_priority(db: Session, issue_id: int, priority: str | None, urgency: str | None):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        return None
+
+    previous_priority = issue.priority
+    previous_urgency = issue.urgency
+
+    if priority is not None:
+        issue.priority = priority
+    if urgency is not None:
+        issue.urgency = urgency
+
+    db.commit()
+    db.refresh(issue)
+
+    logger.info(
+        "admin_override_issue_priority issue_id=%s previous_priority=%s new_priority=%s previous_urgency=%s new_urgency=%s",
+        issue.id,
+        previous_priority,
+        issue.priority,
+        previous_urgency,
+        issue.urgency,
+    )
+    publish_issue_update(issue, "admin_override")
+    return issue
+
+
+def override_issue(
+    db: Session,
+    issue_id: int,
+    assigned_expert_id: int | None = None,
+    priority: str | None = None,
+    urgency: str | None = None,
+    status: str | None = None,
+):
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        return None
+
+    previous_expert_id = issue.assigned_expert_id
+    if assigned_expert_id is not None:
+        expert = db.query(Expert).filter(Expert.id == assigned_expert_id).first()
+        if not expert:
+            return None
+        issue.assigned_expert_id = expert.id
+        issue.assigned_at = datetime.now(timezone.utc)
+
+    if priority is not None:
+        issue.priority = priority
+    if urgency is not None:
+        issue.urgency = urgency
+    if status is not None:
+        issue.status = status
+
+    db.commit()
+    db.refresh(issue)
+    publish_issue_update(
+        issue,
+        "admin_override",
+        previous_expert_id=previous_expert_id if assigned_expert_id is not None else None,
+    )
+    return issue

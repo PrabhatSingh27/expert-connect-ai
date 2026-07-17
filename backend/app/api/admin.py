@@ -7,9 +7,12 @@ from app.schemas.admin import (
     AccountStatusUpdate,
     AnalyticsResponse,
     ExpertVerificationUpdate,
+    IssueExpertOverride,
+    IssueOverride,
+    IssuePriorityOverride,
 )
 from app.schemas.expert import ExpertResponse
-from app.schemas.issue import IssueSummaryResponse
+from app.schemas.issue import IssueResponse, IssueSummaryResponse
 from app.schemas.user import UserResponse
 from app.services.admin_service import (
     get_analytics,
@@ -17,6 +20,9 @@ from app.services.admin_service import (
     list_expert_applications,
     list_issues,
     list_users,
+    override_issue_expert,
+    override_issue,
+    override_issue_priority,
     set_expert_active,
     set_expert_verified,
     set_user_active,
@@ -47,6 +53,65 @@ def admin_list_expert_applications(db: Session = Depends(get_db)):
 @router.get("/issues", response_model=list[IssueSummaryResponse])
 def admin_list_issues(db: Session = Depends(get_db)):
     return list_issues(db)
+
+
+@router.patch("/issues/{issue_id}/override", response_model=IssueResponse)
+def admin_override_issue(
+    issue_id: int,
+    data: IssueOverride,
+    db: Session = Depends(get_db),
+):
+    if all(
+        value is None
+        for value in (
+            data.assigned_expert_id,
+            data.priority,
+            data.urgency,
+            data.status,
+        )
+    ):
+        raise HTTPException(status_code=400, detail="Provide at least one override field")
+
+    issue = override_issue(
+        db,
+        issue_id,
+        assigned_expert_id=data.assigned_expert_id,
+        priority=data.priority,
+        urgency=data.urgency,
+        status=data.status.value if data.status is not None else None,
+    )
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue or expert not found")
+    return issue
+
+
+@router.patch("/issues/{issue_id}/override-expert", response_model=IssueResponse)
+def admin_override_issue_expert(
+    issue_id: int,
+    data: IssueExpertOverride,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    issue = override_issue_expert(db, issue_id, data.expert_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue or expert not found")
+    return issue
+
+
+@router.patch("/issues/{issue_id}/override-priority", response_model=IssueResponse)
+def admin_override_issue_priority(
+    issue_id: int,
+    data: IssuePriorityOverride,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    if data.priority is None and data.urgency is None:
+        raise HTTPException(status_code=400, detail="Priority or urgency is required")
+
+    issue = override_issue_priority(db, issue_id, data.priority, data.urgency)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue not found")
+    return issue
 
 
 @router.patch("/experts/{expert_id}/verify", response_model=ExpertResponse)
