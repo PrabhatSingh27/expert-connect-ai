@@ -8,7 +8,7 @@ export type Issue = {
   id: string | number; title: string; description: string; status: IssueStatus; priority?: IssuePriority; category?: string; problemType?: string; urgency?: string; requiredSkills?: string[]; confidenceScore?: number; aiExplanation?: string;
   preferredVisitDate?: string; preferredTime?: string; location?: string; address?: string; pinCode?: string;
   assignedExpertId?: string | number; assignedExpertName?: string; assignedOperatorId?: string | number; assignedOperatorName?: string;
-  aiResult?: AiResult; media?: IssueMedia[]; attachments?: unknown[]; createdAt: string; updatedAt?: string;
+  aiResult?: AiResult; media?:IssueMedia[]; attachments?: unknown[]; createdAt: string; updatedAt?: string;
 };
 export type ClassifyIssuePayload = { issueId?: string | number; title: string; description: string; location?: string; mediaIds?: string[] };
 export type CreateIssuePayload = { title: string; description: string; category?: string; priority?: string; urgency?: string; requiredSkills?: string[]; preferredVisitDate?: string; preferredTime?: string; location: string; address: string; pinCode: string; mediaIds?: string[]; files?: File[] };
