@@ -25,6 +25,7 @@ class Issue(Base):
     required_skills = Column(Text, nullable=True)
     confidence_score = Column(Float, nullable=True)
     ai_explanation = Column(Text, nullable=True)
+    operator_note = Column(String, nullable=True)
 
     preferred_visit_date = Column(Date, nullable=True)
     preferred_time = Column(String, nullable=True)

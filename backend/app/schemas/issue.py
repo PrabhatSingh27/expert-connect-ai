@@ -123,6 +123,7 @@ class IssueResponse(CamelModel):
     required_skills: list[str] | None = None
     confidence_score: float | None = None
     ai_explanation: str | None = None
+    operator_note: str | None = None
 
     status: str
 

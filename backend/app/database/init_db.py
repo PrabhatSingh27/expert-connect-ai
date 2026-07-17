@@ -8,6 +8,7 @@ from app.models.expert import Expert
 from app.models.expert_review import ExpertReview
 from app.models.issue import Issue
 from app.models.issue_attachment import IssueAttachment
+from app.models.chat_message import ChatMessage
 from app.models.user import User
 from app.database.session import SessionLocal
 from app.core.security import hash_password
@@ -62,6 +63,10 @@ def ensure_database_schema() -> None:
         _execute("ALTER TABLE users ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL")
     if "is_active" not in user_columns:
         _execute("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT true NOT NULL")
+    if "phone_number" not in user_columns:
+        _execute("ALTER TABLE users ADD COLUMN phone_number VARCHAR DEFAULT '' NOT NULL")
+    if "profile_image_url" not in user_columns:
+        _execute("ALTER TABLE users ADD COLUMN profile_image_url VARCHAR")
     _execute("ALTER TABLE users ALTER COLUMN role SET DEFAULT 'customer'")
 
     expert_columns = _column_names("experts")
@@ -94,6 +99,7 @@ def ensure_database_schema() -> None:
         "required_skills": "TEXT",
         "confidence_score": "FLOAT",
         "ai_explanation": "TEXT",
+        "operator_note": "VARCHAR",
         "preferred_visit_date": "DATE",
         "preferred_time": "VARCHAR",
         "location": "VARCHAR",

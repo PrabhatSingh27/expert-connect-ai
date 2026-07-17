@@ -13,6 +13,9 @@ from app.api.expert_dashboard import router as expert_dashboard_router
 from app.api.review import router as review_router
 from app.api.feedback import router as feedback_router
 from app.api.admin import router as admin_router
+from app.api.operator import router as operator_router
+from app.api.chat import router as chat_router
+from app.api.upload import router as upload_router
 from app.database.init_db import ensure_database_schema
 from app.core.logging_config import configure_logging
 from app.services.websocket_manager import manager
@@ -41,6 +44,9 @@ app.include_router(issue_router)
 app.include_router(review_router)
 app.include_router(feedback_router)
 app.include_router(admin_router)
+app.include_router(operator_router)
+app.include_router(chat_router)
+app.include_router(upload_router)
 
 
 @app.get("/")
@@ -79,13 +85,13 @@ def _socket_identity_is_valid(account_type: str, account_id: int, token: str | N
         if account_type == "expert" and role == "expert":
             return subject is not None and int(subject) == account_id and db.get(Expert, account_id) is not None
 
-        if account_type in {"user", "customer", "admin"} and subject:
+        if account_type in {"user", "customer", "admin", "operator"} and subject:
             user = db.query(User).filter(User.email == subject).first()
             if user is None or user.id != account_id:
                 return False
             return (account_type == "admin" and role == "admin") or (
-                account_type in {"user", "customer"} and role != "admin"
-            )
+                account_type in {"user", "customer"} and role == "customer"
+            ) or (account_type == "operator" and role == "operator")
         return False
     except (TypeError, ValueError):
         return False
@@ -96,7 +102,7 @@ def _socket_identity_is_valid(account_type: str, account_id: int, token: str | N
 @app.websocket("/ws/{account_type}/{account_id}")
 async def issue_dashboard_websocket(websocket: WebSocket, account_type: str, account_id: int):
     normalized_type = account_type.strip().lower()
-    if normalized_type not in {"user", "customer", "expert", "admin"}:
+    if normalized_type not in {"user", "customer", "expert", "admin", "operator"}:
         await websocket.close(code=1008)
         return
 

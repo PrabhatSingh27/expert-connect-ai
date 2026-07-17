@@ -32,6 +32,8 @@ def register_user(
         password_hash=hash_password(
             user_data.password
         ),
+        phone_number=user_data.phone_number,
+        profile_image_url=user_data.profile_image_url,
         role=user_data.role or "customer"
     )
 

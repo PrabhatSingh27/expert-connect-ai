@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from typing import Optional
+
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from app.schemas.user import UserCreate, UserResponse
@@ -24,6 +26,8 @@ from app.core.security import (
     create_access_token
 )
 from app.core.rate_limit import rate_limit
+from app.services.file_storage_service import save_upload_file
+from app.utils.file_validator import validate_upload_file
 
 router = APIRouter(
     prefix="/auth",
@@ -42,11 +46,24 @@ def get_db():
     "/register",
     response_model=UserResponse
 )
-def register(
-    user: UserCreate,
+async def register(
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    phone_number: str = Form(..., min_length=1),
+    photo: Optional[UploadFile] = File(None),
     _: None = Depends(rate_limit(limit=10, window_seconds=60)),
     db: Session = Depends(get_db)
 ):
+    user = UserCreate(
+        name=name,
+        email=email,
+        password=password,
+        phone_number=phone_number,
+    )
+    if photo is not None and (photo.filename or photo.content_type):
+        await validate_upload_file(photo, "image")
+        user.profile_image_url = save_upload_file(photo, folder="profiles")
     return register_user(db, user)
 
 @router.post(
@@ -68,7 +85,13 @@ def login(
         return expert_login(db, user_data)
 
     normalized_role = (user.role or "customer").strip().lower()
-    account_type = "admin" if normalized_role == "admin" else "user"
+    account_type = (
+        "admin"
+        if normalized_role == "admin"
+        else "operator"
+        if normalized_role == "operator"
+        else "user"
+    )
 
     token = create_access_token(
         {

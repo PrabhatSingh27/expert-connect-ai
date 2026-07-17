@@ -30,6 +30,7 @@ from app.services.expert_service import (
     update_issue_status,
 )
 from app.services.file_storage_service import save_upload_file
+from app.utils.file_validator import validate_upload_file
 
 router = APIRouter(
     prefix="/experts",
@@ -41,7 +42,7 @@ router = APIRouter(
     "/signup",
     response_model=ExpertResponse
 )
-def expert_signup(
+async def expert_signup(
     full_name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
@@ -59,6 +60,11 @@ def expert_signup(
     _: None = Depends(rate_limit(limit=10, window_seconds=60)),
     db: Session = Depends(get_db)
 ):
+    if profile_image is not None and (profile_image.filename or profile_image.content_type):
+        await validate_upload_file(profile_image, "image")
+    if government_id_document is not None and (government_id_document.filename or government_id_document.content_type):
+        await validate_upload_file(government_id_document, "document")
+
     signup_data = ExpertSignup(
         full_name=full_name,
         email=email,
@@ -122,7 +128,7 @@ def my_profile(
     "/profile/me",
     response_model=ExpertResponse
 )
-def update_profile(
+async def update_profile(
     full_name: str | None = Form(default=None),
     phone: str | None = Form(default=None),
     skills: str | None = Form(default=None),
@@ -137,6 +143,11 @@ def update_profile(
     current_expert: Expert = Depends(get_current_expert),
     db: Session = Depends(get_db)
 ):
+    if profile_image is not None and (profile_image.filename or profile_image.content_type):
+        await validate_upload_file(profile_image, "image")
+    if government_id_document is not None and (government_id_document.filename or government_id_document.content_type):
+        await validate_upload_file(government_id_document, "document")
+
     update_payload = {
         "full_name": full_name,
         "phone": phone,

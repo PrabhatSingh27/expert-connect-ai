@@ -135,6 +135,16 @@ def get_current_admin(current_user: User = Depends(get_current_user)):
     return current_user
 
 
+def get_current_operator(current_user: User = Depends(get_current_user)):
+    if (current_user.role or "").strip().lower() != "operator":
+        raise HTTPException(
+            status_code=403,
+            detail="Operator access required",
+        )
+
+    return current_user
+
+
 def get_current_account(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db),
@@ -197,7 +207,13 @@ def get_current_account(
         )
 
     normalized_role = (user.role or "customer").strip().lower()
-    account_type = "admin" if normalized_role == "admin" else "user"
+    account_type = (
+        "admin"
+        if normalized_role == "admin"
+        else "operator"
+        if normalized_role == "operator"
+        else "user"
+    )
     is_admin = normalized_role == "admin"
     return {
         "id": user.id,

@@ -1,10 +1,7 @@
-from datetime import datetime, timezone
-
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import joinedload
 
-from app.models.expert import Expert
 from app.models.issue import Issue
 from app.services.assignment_service import assign_best_expert as assign_best_expert_to_issue
 from app.services.ai_classification_service import classify_issue_content
@@ -12,7 +9,6 @@ from app.services.file_storage_service import (
     delete_issue_attachments_from_storage,
     save_issue_media_files,
 )
-from app.services.matching_service import match_experts_for_issue
 from app.services.notification_service import notify_expert_assigned, notify_issue_status_changed
 from app.services.websocket_manager import publish_issue_update
 
@@ -227,24 +223,12 @@ def update_issue_status_any(db: Session, issue_id: int, status: str):
 
 def assign_best_expert_any(db: Session, issue_id: int):
     issue = get_issue_by_id(db, issue_id)
-    matches = match_experts_for_issue(db, issue, limit=1)
-
-    if not matches:
+    expert = assign_best_expert_to_issue(issue, db, commit=False)
+    if expert is None:
         raise HTTPException(
             status_code=404,
-            detail="No matching experts found",
+            detail="No eligible experts found",
         )
-
-    expert = db.query(Expert).filter(Expert.id == matches[0]["expert_id"]).first()
-    if not expert:
-        raise HTTPException(
-            status_code=404,
-            detail="Matched expert not found",
-        )
-
-    issue.assigned_expert_id = expert.id
-    issue.assigned_at = datetime.now(timezone.utc)
-    issue.status = "in_progress"
 
     db.commit()
     db.refresh(issue)
@@ -256,24 +240,12 @@ def assign_best_expert_any(db: Session, issue_id: int):
 
 def assign_best_expert(db: Session, issue_id: int, current_user_id: int):
     issue = get_customer_issue(db, issue_id, current_user_id)
-    matches = match_experts_for_issue(db, issue, limit=1)
-
-    if not matches:
+    expert = assign_best_expert_to_issue(issue, db, commit=False)
+    if expert is None:
         raise HTTPException(
             status_code=404,
-            detail="No matching experts found",
+            detail="No eligible experts found",
         )
-
-    expert = db.query(Expert).filter(Expert.id == matches[0]["expert_id"]).first()
-    if not expert:
-        raise HTTPException(
-            status_code=404,
-            detail="Matched expert not found",
-        )
-
-    issue.assigned_expert_id = expert.id
-    issue.assigned_at = datetime.now(timezone.utc)
-    issue.status = "in_progress"
 
     db.commit()
     db.refresh(issue)

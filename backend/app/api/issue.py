@@ -26,6 +26,7 @@ from app.services.issue_service import (
 )
 from app.services.file_storage_service import validate_single_issue_media_uploads
 from app.services.matching_service import match_experts_for_issue
+from app.utils.file_validator import validate_upload_file
 
 router = APIRouter(
     prefix="/issues",
@@ -67,6 +68,10 @@ async def create_new_issue(
             "address": address,
         }
     )
+    for upload, expected_type in ((image, "image"), (video, "video"), (audio, "audio")):
+        if upload is not None and (upload.filename or upload.content_type):
+            await validate_upload_file(upload, expected_type)
+
     media = validate_single_issue_media_uploads(
         image=image,
         video=video,
@@ -156,6 +161,10 @@ async def edit_issue(
             if value is not None
         }
     )
+    for upload, expected_type in ((image, "image"), (video, "video"), (audio, "audio")):
+        if upload is not None and (upload.filename or upload.content_type):
+            await validate_upload_file(upload, expected_type)
+
     media = validate_single_issue_media_uploads(
         image=image,
         video=video,

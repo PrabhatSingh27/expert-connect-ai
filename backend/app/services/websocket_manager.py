@@ -71,6 +71,7 @@ def issue_event_payload(issue: Any, event: str) -> dict[str, Any]:
             "priority": issue.priority,
             "urgency": issue.urgency,
             "status": issue.status,
+            "operatorNote": issue.operator_note,
             "customerId": issue.customer_id,
             "assignedExpertId": issue.assigned_expert_id,
             "assignedExpert": assigned_expert,
