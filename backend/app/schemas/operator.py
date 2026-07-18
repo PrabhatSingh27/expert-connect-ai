@@ -1,4 +1,6 @@
-from pydantic import BaseModel, ConfigDict, StrictInt
+from pydantic import BaseModel, ConfigDict, StrictInt, field_validator
+
+from app.schemas.issue import IssueStatus, IssueUrgency
 
 
 class OperatorModel(BaseModel):
@@ -6,11 +8,20 @@ class OperatorModel(BaseModel):
 
 
 class OperatorIssueUpdate(OperatorModel):
-    status: str | None = None
-    urgency: str | None = None
-    priority: str | None = None
+    status: IssueStatus | None = None
+    problem_type: str | None = None
+    category: str | None = None
+    urgency: IssueUrgency | None = None
+    priority: IssueUrgency | None = None
     assigned_expert_id: StrictInt | None = None
     operator_note: str | None = None
+
+    @field_validator("problem_type", "category")
+    @classmethod
+    def validate_non_empty_text(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("value must not be blank")
+        return value.strip() if value is not None else value
 
 
 class OperatorExpertVerification(BaseModel):

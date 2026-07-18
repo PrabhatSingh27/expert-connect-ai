@@ -1,19 +1,21 @@
-from datetime import datetime, timezone
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_operator, get_db
 from app.models.expert import Expert
 from app.models.issue import Issue
 from app.models.user import User
-from app.schemas.issue import IssueResponse
+from app.schemas.issue import IssueResponse, IssueSummaryResponse
 from app.schemas.operator import (
     OperatorDashboardMetrics,
     OperatorExpertVerification,
     OperatorIssueUpdate,
 )
-from app.services.websocket_manager import publish_issue_update
+from app.services.operator_service import (
+    get_operator_issue,
+    list_operator_issues,
+    override_issue_decisions,
+)
 
 
 router = APIRouter(
@@ -27,10 +29,10 @@ router = APIRouter(
 def dashboard_metrics(db: Session = Depends(get_db)):
     queue_count = (
         db.query(Issue)
-        .filter(Issue.status.in_(["submitted", "ai_classified", "operator_review"]))
+        .filter(Issue.status.in_(["submitted", "ai_classified", "waiting_for_assignment", "operator_review"]))
         .count()
     )
-    open_count = db.query(Issue).filter(Issue.status == "open").count()
+    open_count = db.query(Issue).filter(Issue.status.in_(["assigned", "in_progress"])).count()
     available_experts = (
         db.query(Expert)
         .filter(Expert.is_verified.is_(True), Expert.is_active.is_(True))
@@ -43,6 +45,16 @@ def dashboard_metrics(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/issues", response_model=list[IssueSummaryResponse])
+def list_issues_for_review(db: Session = Depends(get_db)):
+    return list_operator_issues(db)
+
+
+@router.get("/issues/{issue_id}", response_model=IssueResponse)
+def get_issue_for_review(issue_id: int, db: Session = Depends(get_db)):
+    return get_operator_issue(db, issue_id)
+
+
 @router.patch("/issues/{issue_id}", response_model=IssueResponse)
 def update_issue(
     issue_id: int,
@@ -50,31 +62,7 @@ def update_issue(
     current_operator: User = Depends(get_current_operator),
     db: Session = Depends(get_db),
 ):
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
-    if issue is None:
-        raise HTTPException(status_code=404, detail="Issue not found")
-
-    previous_expert_id = issue.assigned_expert_id
-    if data.assigned_expert_id is not None:
-        expert = db.query(Expert).filter(Expert.id == data.assigned_expert_id).first()
-        if expert is None:
-            raise HTTPException(status_code=404, detail="Expert not found")
-        issue.assigned_expert_id = expert.id
-        issue.assigned_at = datetime.now(timezone.utc)
-
-    for field in ("status", "urgency", "priority", "operator_note"):
-        value = getattr(data, field)
-        if value is not None:
-            setattr(issue, field, value)
-
-    db.commit()
-    db.refresh(issue)
-    publish_issue_update(
-        issue,
-        "operator_issue_updated",
-        previous_expert_id=previous_expert_id if data.assigned_expert_id is not None else None,
-    )
-    return issue
+    return override_issue_decisions(db, issue_id, data)
 
 
 @router.patch("/experts/{expert_id}/verify", response_model=dict)

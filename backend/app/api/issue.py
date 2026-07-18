@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_db
@@ -17,7 +17,6 @@ from app.services.issue_service import (
     assign_best_expert_any,
     classify_issue,
     create_issue,
-    get_all_issues,
     get_customer_issue,
     get_my_issues,
     assign_best_expert,
@@ -88,20 +87,19 @@ async def create_new_issue(
 
 @router.get("/", response_model=list[IssueSummaryResponse])
 def list_issues(
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    return get_all_issues(db)
+    # Customer issue routes must never disclose another customer's requests.
+    return get_my_issues(db, current_user.id)
 
 
 @router.get("", response_model=list[IssueSummaryResponse])
 def list_issues_without_redirect(
-    mine: bool = Query(default=False),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    if mine:
-        return get_my_issues(db, current_user.id)
-    return get_all_issues(db)
+    return get_my_issues(db, current_user.id)
 
 
 @router.get("/my", response_model=list[IssueSummaryResponse])
