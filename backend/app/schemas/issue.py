@@ -139,6 +139,7 @@ class IssueResponse(CamelModel):
 
     customer_id: int
     assigned_expert_id: int | None = None
+    review_operator_id: int | None = None
     assigned_expert: AssignedExpertSummary | None = None
     assigned_at: datetime | None = None
     created_at: datetime
@@ -162,6 +163,7 @@ class IssueSummaryResponse(CamelModel):
     location: str | None = None
     pin_code: str | None = None
     assigned_expert_id: int | None = None
+    review_operator_id: int | None = None
     assigned_expert: AssignedExpertSummary | None = None
     assigned_at: datetime | None = None
     updated_at: datetime

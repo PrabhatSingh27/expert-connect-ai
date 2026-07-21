@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_operator, get_db
@@ -12,7 +12,10 @@ from app.schemas.operator import (
     OperatorIssueUpdate,
 )
 from app.services.operator_service import (
+    OPEN_OPERATOR_STATUSES,
+    OPERATOR_REVIEW_QUEUE_STATUSES,
     get_operator_issue,
+    list_operator_queue,
     list_operator_issues,
     override_issue_decisions,
 )
@@ -26,13 +29,26 @@ router = APIRouter(
 
 
 @router.get("/dashboard/metrics", response_model=OperatorDashboardMetrics)
-def dashboard_metrics(db: Session = Depends(get_db)):
+def dashboard_metrics(
+    current_operator: User = Depends(get_current_operator),
+    db: Session = Depends(get_db),
+):
     queue_count = (
         db.query(Issue)
-        .filter(Issue.status.in_(["submitted", "ai_classified", "waiting_for_assignment", "operator_review"]))
+        .filter(
+            Issue.review_operator_id == current_operator.id,
+            Issue.status.in_(OPERATOR_REVIEW_QUEUE_STATUSES),
+        )
         .count()
     )
-    open_count = db.query(Issue).filter(Issue.status.in_(["assigned", "in_progress"])).count()
+    open_count = (
+        db.query(Issue)
+        .filter(
+            Issue.review_operator_id == current_operator.id,
+            Issue.status.in_(OPEN_OPERATOR_STATUSES),
+        )
+        .count()
+    )
     available_experts = (
         db.query(Expert)
         .filter(Expert.is_verified.is_(True), Expert.is_active.is_(True))
@@ -45,14 +61,29 @@ def dashboard_metrics(db: Session = Depends(get_db)):
     }
 
 
+@router.get("/issues/queue", response_model=list[IssueSummaryResponse])
+def list_review_queue(
+    current_operator: User = Depends(get_current_operator),
+    db: Session = Depends(get_db),
+):
+    return list_operator_queue(db, current_operator.id)
+
+
 @router.get("/issues", response_model=list[IssueSummaryResponse])
-def list_issues_for_review(db: Session = Depends(get_db)):
-    return list_operator_issues(db)
+def list_issues_for_review(
+    current_operator: User = Depends(get_current_operator),
+    db: Session = Depends(get_db),
+):
+    return list_operator_issues(db, current_operator.id)
 
 
 @router.get("/issues/{issue_id}", response_model=IssueResponse)
-def get_issue_for_review(issue_id: int, db: Session = Depends(get_db)):
-    return get_operator_issue(db, issue_id)
+def get_issue_for_review(
+    issue_id: int,
+    current_operator: User = Depends(get_current_operator),
+    db: Session = Depends(get_db),
+):
+    return get_operator_issue(db, issue_id, current_operator.id)
 
 
 @router.patch("/issues/{issue_id}", response_model=IssueResponse)
@@ -62,7 +93,7 @@ def update_issue(
     current_operator: User = Depends(get_current_operator),
     db: Session = Depends(get_db),
 ):
-    return override_issue_decisions(db, issue_id, data)
+    return override_issue_decisions(db, issue_id, current_operator.id, data)
 
 
 @router.patch("/experts/{expert_id}/verify", response_model=dict)

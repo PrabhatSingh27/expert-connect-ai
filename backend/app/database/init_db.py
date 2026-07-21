@@ -93,6 +93,7 @@ def ensure_database_schema() -> None:
     issue_columns = _column_names("issues")
     issue_defaults = {
         "assigned_expert_id": "INTEGER",
+        "review_operator_id": "INTEGER",
         "problem_type": "VARCHAR",
         "priority": "VARCHAR",
         "urgency": "VARCHAR",

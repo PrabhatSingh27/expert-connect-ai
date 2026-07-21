@@ -24,3 +24,9 @@ class User(Base):
         back_populates="customer",
         cascade="all, delete-orphan",
     )
+
+    review_issues = relationship(
+        "Issue",
+        foreign_keys="Issue.review_operator_id",
+        back_populates="review_operator",
+    )

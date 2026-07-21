@@ -10,6 +10,7 @@ from app.services.file_storage_service import (
     save_issue_media_files,
 )
 from app.services.notification_service import notify_expert_assigned, notify_issue_status_changed
+from app.services.operator_service import assign_primary_operator_review
 from app.services.websocket_manager import publish_issue_update
 
 
@@ -97,6 +98,7 @@ def create_issue(
     assigned_expert = assign_best_expert_to_issue(issue, db, commit=False)
     if assigned_expert is None:
         issue.status = "waiting_for_assignment"
+    assign_primary_operator_review(db, issue)
 
     db.commit()
     db.refresh(issue)

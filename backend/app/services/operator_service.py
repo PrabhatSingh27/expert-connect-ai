@@ -4,11 +4,13 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
+from sqlalchemy import or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, joinedload
 
 from app.models.expert import Expert
 from app.models.issue import Issue
+from app.models.user import User
 from app.services.matching_service import eligible_experts_for_issue
 from app.services.websocket_manager import publish_issue_update
 
@@ -16,21 +18,91 @@ from app.services.websocket_manager import publish_issue_update
 logger = logging.getLogger(__name__)
 
 
-def list_operator_issues(db: Session) -> list[Issue]:
-    """Return all issues so operators can review both assigned and queued work."""
+PRIMARY_OPERATOR_EMAIL = "op1@gmail.com"
+OPERATOR_REVIEW_QUEUE_STATUSES = (
+    "submitted",
+    "ai_classified",
+    "waiting_for_assignment",
+    "operator_review",
+    "need_more_info",
+    "assigned",
+    "in_progress",
+)
+OPEN_OPERATOR_STATUSES = ("assigned", "in_progress")
+
+
+def get_primary_review_operator(db: Session) -> User:
+    operator = (
+        db.query(User)
+        .filter(
+            User.email == PRIMARY_OPERATOR_EMAIL,
+            User.role == "operator",
+            User.is_active.is_(True),
+        )
+        .first()
+    )
+    if operator is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Primary operator account is not provisioned",
+        )
+    return operator
+
+
+def assign_primary_operator_review(db: Session, issue: Issue) -> User:
+    """Set Op1 as review owner without changing customer or expert assignment."""
+    operator = get_primary_review_operator(db)
+    issue.review_operator_id = operator.id
+    return operator
+
+
+def backfill_operator_review_assignments(
+    db: Session,
+    primary_operator_id: int,
+    secondary_operator_id: int | None = None,
+) -> int:
+    """Assign missing or retired-operator review work to the primary operator."""
+    conditions = [Issue.review_operator_id.is_(None)]
+    if secondary_operator_id is not None:
+        conditions.append(Issue.review_operator_id == secondary_operator_id)
+
+    return (
+        db.query(Issue)
+        .filter(or_(*conditions))
+        .update({Issue.review_operator_id: primary_operator_id}, synchronize_session=False)
+    )
+
+
+def list_operator_issues(db: Session, operator_id: int) -> list[Issue]:
+    """Return only the authenticated operator's assigned review work."""
     return (
         db.query(Issue)
         .options(joinedload(Issue.assigned_expert))
+        .filter(Issue.review_operator_id == operator_id)
         .order_by(Issue.updated_at.desc(), Issue.id.desc())
         .all()
     )
 
 
-def get_operator_issue(db: Session, issue_id: int) -> Issue:
+def list_operator_queue(db: Session, operator_id: int) -> list[Issue]:
+    """Return active review work owned by the authenticated operator."""
+    return (
+        db.query(Issue)
+        .options(joinedload(Issue.assigned_expert))
+        .filter(
+            Issue.review_operator_id == operator_id,
+            Issue.status.in_(OPERATOR_REVIEW_QUEUE_STATUSES),
+        )
+        .order_by(Issue.updated_at.desc(), Issue.id.desc())
+        .all()
+    )
+
+
+def get_operator_issue(db: Session, issue_id: int, operator_id: int) -> Issue:
     issue = (
         db.query(Issue)
         .options(joinedload(Issue.assigned_expert))
-        .filter(Issue.id == issue_id)
+        .filter(Issue.id == issue_id, Issue.review_operator_id == operator_id)
         .first()
     )
     if issue is None:
@@ -42,9 +114,9 @@ def _eligible_expert_ids(db: Session, issue: Issue) -> set[int]:
     return {candidate["expert"].id for candidate in eligible_experts_for_issue(db, issue)}
 
 
-def override_issue_decisions(db: Session, issue_id: int, data) -> Issue:
+def override_issue_decisions(db: Session, issue_id: int, operator_id: int, data) -> Issue:
     """Apply an operator's optional triage and assignment corrections safely."""
-    issue = get_operator_issue(db, issue_id)
+    issue = get_operator_issue(db, issue_id, operator_id)
     previous_expert_id = issue.assigned_expert_id
     update_data = data.model_dump(exclude_unset=True)
 

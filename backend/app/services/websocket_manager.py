@@ -67,6 +67,8 @@ def issue_event_payload(issue: Any, event: str) -> dict[str, Any]:
         "issue": {
             "id": issue.id,
             "title": issue.title,
+            "description": getattr(issue, "description", None),
+            "problemType": issue.problem_type,
             "category": issue.category,
             "priority": issue.priority,
             "urgency": issue.urgency,
@@ -74,6 +76,7 @@ def issue_event_payload(issue: Any, event: str) -> dict[str, Any]:
             "operatorNote": issue.operator_note,
             "customerId": issue.customer_id,
             "assignedExpertId": issue.assigned_expert_id,
+            "reviewOperatorId": issue.review_operator_id,
             "assignedExpert": assigned_expert,
             "assignedAt": _json_value(issue.assigned_at),
             "updatedAt": _json_value(issue.updated_at),
@@ -92,6 +95,8 @@ async def broadcast_issue_update(
         await manager.send_personal_message(payload, "expert", issue["assignedExpertId"])
     if previous_expert_id is not None and previous_expert_id != issue["assignedExpertId"]:
         await manager.send_personal_message(payload, "expert", previous_expert_id)
+    if issue["reviewOperatorId"] is not None:
+        await manager.send_personal_message(payload, "operator", issue["reviewOperatorId"])
     await manager.broadcast_to_account_type(payload, "admin")
 
 

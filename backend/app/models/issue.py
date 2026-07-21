@@ -53,6 +53,12 @@ class Issue(Base):
         ForeignKey("experts.id"),
         nullable=True
     )
+    review_operator_id = Column(
+        Integer,
+        ForeignKey("users.id"),
+        nullable=True,
+        index=True,
+    )
 
     customer = relationship(
         "User",
@@ -64,6 +70,12 @@ class Issue(Base):
         "Expert",
         foreign_keys=[assigned_expert_id],
         back_populates="assigned_issues"
+    )
+
+    review_operator = relationship(
+        "User",
+        foreign_keys=[review_operator_id],
+        back_populates="review_issues",
     )
 
     attachments = relationship(
