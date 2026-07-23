@@ -10,6 +10,7 @@ from app.schemas.admin import (
     IssueExpertOverride,
     IssueOverride,
     IssuePriorityOverride,
+    OperatorSuspensionUpdate,
 )
 from app.schemas.expert import ExpertResponse
 from app.schemas.issue import IssueResponse, IssueSummaryResponse
@@ -23,6 +24,7 @@ from app.services.admin_service import (
     override_issue_expert,
     override_issue,
     override_issue_priority,
+    set_operator_suspension,
     set_expert_active,
     set_expert_verified,
     set_user_active,
@@ -85,13 +87,35 @@ def admin_override_issue(
     return issue
 
 
-@router.patch("/issues/{issue_id}/override-expert", response_model=IssueResponse)
+@router.patch(
+    "/issues/{issue_id}/override-expert",
+    response_model=IssueResponse,
+    deprecated=True,
+)
 def admin_override_issue_expert(
     issue_id: int,
     data: IssueExpertOverride,
     current_admin: User = Depends(get_current_admin),
     db: Session = Depends(get_db),
 ):
+    issue = override_issue_expert(db, issue_id, data.expert_id)
+    if not issue:
+        raise HTTPException(status_code=404, detail="Issue or expert not found")
+    return issue
+
+
+@router.patch("/issues/{issue_id}/assign-expert", response_model=IssueResponse)
+def admin_assign_issue_expert(
+    issue_id: int,
+    data: IssueExpertOverride,
+    current_admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db),
+):
+    """Canonical Admin Dashboard assignment route.
+
+    The older ``override-expert`` route remains temporarily for existing
+    clients, but new clients must use this explicit assignment contract.
+    """
     issue = override_issue_expert(db, issue_id, data.expert_id)
     if not issue:
         raise HTTPException(status_code=404, detail="Issue or expert not found")
@@ -135,6 +159,21 @@ def update_user_status(
     user = set_user_active(db, user_id, data.is_active)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
+@router.patch("/operators/{operator_id}/suspension", response_model=UserResponse)
+def update_operator_suspension(
+    operator_id: int,
+    data: OperatorSuspensionUpdate,
+    db: Session = Depends(get_db),
+):
+    try:
+        user = set_operator_suspension(db, operator_id, data.suspended)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not user:
+        raise HTTPException(status_code=404, detail="Operator not found")
     return user
 
 

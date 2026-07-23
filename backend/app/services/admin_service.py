@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models.expert import Expert
 from app.models.issue import Issue
 from app.models.user import User
-from app.services.websocket_manager import publish_issue_update
+from app.services.websocket_manager import publish_account_status_update, publish_issue_update
 
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,16 @@ def list_issues(db: Session):
     return db.query(Issue).options(joinedload(Issue.assigned_expert)).all()
 
 
+def _get_issue_with_assigned_expert(db: Session, issue_id: int) -> Issue | None:
+    """Load the relation required by both the REST response and WS payload."""
+    return (
+        db.query(Issue)
+        .options(joinedload(Issue.assigned_expert))
+        .filter(Issue.id == issue_id)
+        .first()
+    )
+
+
 def set_expert_verified(db: Session, expert_id: int, is_verified: bool):
     expert = db.query(Expert).filter(Expert.id == expert_id).first()
     if not expert:
@@ -50,8 +60,26 @@ def set_user_active(db: Session, user_id: int, is_active: bool):
         return None
 
     user.is_active = is_active
+    if is_active and getattr(user, "account_status", "active") in {"deactivated", "suspended"}:
+        user.account_status = "active"
     db.commit()
     db.refresh(user)
+    return user
+
+
+def set_operator_suspension(db: Session, operator_id: int, suspended: bool):
+    user = db.query(User).filter(User.id == operator_id).first()
+    if not user:
+        return None
+
+    if (user.role or "").strip().lower() != "operator":
+        raise ValueError("Target user is not an operator")
+
+    user.account_status = "suspended" if suspended else "active"
+    user.is_active = not suspended
+    db.commit()
+    db.refresh(user)
+    publish_account_status_update(user)
     return user
 
 
@@ -83,7 +111,7 @@ def get_analytics(db: Session):
 
 
 def override_issue_expert(db: Session, issue_id: int, expert_id: int):
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    issue = _get_issue_with_assigned_expert(db, issue_id)
     if not issue:
         return None
 
@@ -95,9 +123,12 @@ def override_issue_expert(db: Session, issue_id: int, expert_id: int):
     issue.assigned_expert_id = expert.id
     issue.assigned_at = datetime.now(timezone.utc)
     issue.status = "in_progress"
+    issue.admin_override_at = datetime.now(timezone.utc)
 
     db.commit()
-    db.refresh(issue)
+    # Reload with the relationship eagerly populated.  This prevents the API
+    # response and live event from containing only assignedExpertId.
+    issue = _get_issue_with_assigned_expert(db, issue_id)
 
     logger.info(
         "admin_override_issue_expert issue_id=%s previous_expert_id=%s new_expert_id=%s",
@@ -125,6 +156,7 @@ def override_issue_priority(db: Session, issue_id: int, priority: str | None, ur
         issue.priority = priority
     if urgency is not None:
         issue.urgency = urgency
+    issue.admin_override_at = datetime.now(timezone.utc)
 
     db.commit()
     db.refresh(issue)
@@ -149,7 +181,7 @@ def override_issue(
     urgency: str | None = None,
     status: str | None = None,
 ):
-    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    issue = _get_issue_with_assigned_expert(db, issue_id)
     if not issue:
         return None
 
@@ -167,9 +199,10 @@ def override_issue(
         issue.urgency = urgency
     if status is not None:
         issue.status = status
+    issue.admin_override_at = datetime.now(timezone.utc)
 
     db.commit()
-    db.refresh(issue)
+    issue = _get_issue_with_assigned_expert(db, issue_id)
     publish_issue_update(
         issue,
         "admin_override",

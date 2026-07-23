@@ -39,6 +39,7 @@ class Issue(Base):
 
     status = Column(String, nullable=False, default="submitted", server_default="submitted")
 
+    admin_override_at = Column(DateTime(timezone=True), nullable=True)
     assigned_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(

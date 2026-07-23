@@ -35,6 +35,23 @@ def _token_role(payload: dict) -> str:
     ).strip().lower()
 
 
+def _account_status(user: User) -> str:
+    return str(getattr(user, "account_status", None) or "active").strip().lower()
+
+
+def _ensure_user_can_authenticate(user: User) -> None:
+    if _account_status(user) == "suspended":
+        raise HTTPException(
+            status_code=403,
+            detail="Suspended",
+        )
+    if not user.is_active:
+        raise HTTPException(
+            status_code=403,
+            detail="Account is deactivated",
+        )
+
+
 def get_db():
     db = SessionLocal()
     try:
@@ -70,11 +87,7 @@ def get_current_user(
             detail="User not found",
         )
 
-    if not user.is_active:
-        raise HTTPException(
-            status_code=403,
-            detail="Account is deactivated",
-        )
+    _ensure_user_can_authenticate(user)
 
     return user
 
@@ -200,11 +213,7 @@ def get_current_account(
             status_code=401,
             detail="User not found",
         )
-    if not user.is_active:
-        raise HTTPException(
-            status_code=403,
-            detail="Account is deactivated",
-        )
+    _ensure_user_can_authenticate(user)
 
     normalized_role = (user.role or "customer").strip().lower()
     account_type = (
@@ -227,4 +236,5 @@ def get_current_account(
         "is_admin": is_admin,
         "is_verified": None,
         "is_active": user.is_active,
+        "account_status": _account_status(user),
     }

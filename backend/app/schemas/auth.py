@@ -22,6 +22,7 @@ class Token(AuthBaseModel):
     expert_id: int | None = None
     role: str | None = None
     account_type: str | None = None
+    account_status: str | None = None
     is_expert: bool = False
     is_admin: bool = False
     is_verified: bool | None = None
@@ -40,3 +41,4 @@ class AuthMe(AuthBaseModel):
     is_admin: bool = False
     is_verified: bool | None = None
     is_active: bool = True
+    account_status: str | None = None

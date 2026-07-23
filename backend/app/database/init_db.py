@@ -38,6 +38,7 @@ def seed_default_admin() -> None:
         if admin:
             admin.name = "Admin"
             admin.role = "admin"
+            admin.account_status = "active"
             admin.is_active = True
             admin.password_hash = hash_password("admin123")
         else:
@@ -46,6 +47,7 @@ def seed_default_admin() -> None:
                 email="admin@gmail.com",
                 password_hash=hash_password("admin123"),
                 role="admin",
+                account_status="active",
                 is_active=True,
             )
             db.add(admin)
@@ -63,6 +65,8 @@ def ensure_database_schema() -> None:
         _execute("ALTER TABLE users ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL")
     if "is_active" not in user_columns:
         _execute("ALTER TABLE users ADD COLUMN is_active BOOLEAN DEFAULT true NOT NULL")
+    if "account_status" not in user_columns:
+        _execute("ALTER TABLE users ADD COLUMN account_status VARCHAR DEFAULT 'active' NOT NULL")
     if "phone_number" not in user_columns:
         _execute("ALTER TABLE users ADD COLUMN phone_number VARCHAR DEFAULT '' NOT NULL")
     if "profile_image_url" not in user_columns:
@@ -109,6 +113,7 @@ def ensure_database_schema() -> None:
         "image_path": "VARCHAR",
         "video_path": "VARCHAR",
         "audio_path": "VARCHAR",
+        "admin_override_at": "TIMESTAMP WITH TIME ZONE",
         "assigned_at": "TIMESTAMP WITH TIME ZONE",
         "created_at": "TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL",
         "updated_at": "TIMESTAMP WITH TIME ZONE DEFAULT now() NOT NULL",

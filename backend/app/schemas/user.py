@@ -31,6 +31,7 @@ class UserResponse(BaseModel):
     phone_number: str
     profile_image_url: str | None = None
     role: str
+    account_status: str = "active"
     is_active: bool
     created_at: datetime
 

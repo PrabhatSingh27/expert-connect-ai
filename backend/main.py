@@ -9,6 +9,7 @@ from app.api.user import router as user_router
 from app.api.expert import router as expert_router
 from app.api.availability import router as availability_router
 from app.api.issue import router as issue_router
+from app.api.issue_media import router as issue_media_router
 from app.api.expert_dashboard import router as expert_dashboard_router
 from app.api.review import router as review_router
 from app.api.feedback import router as feedback_router
@@ -23,6 +24,12 @@ from app.auth.dependencies import _decode_token
 from app.database.session import SessionLocal
 from app.models.expert import Expert
 from app.models.user import User
+
+
+def _user_can_use_realtime(user: User) -> bool:
+    account_status = str(getattr(user, "account_status", None) or "active").strip().lower()
+    return user.is_active and account_status != "suspended"
+
 
 configure_logging()
 app = FastAPI(openapi_version="3.0.3")
@@ -41,6 +48,7 @@ app.include_router(expert_router)
 app.include_router(expert_dashboard_router)
 app.include_router(availability_router)
 app.include_router(issue_router)
+app.include_router(issue_media_router)
 app.include_router(review_router)
 app.include_router(feedback_router)
 app.include_router(admin_router)
@@ -83,11 +91,12 @@ def _socket_identity_is_valid(account_type: str, account_id: int, token: str | N
     db = SessionLocal()
     try:
         if account_type == "expert" and role == "expert":
-            return subject is not None and int(subject) == account_id and db.get(Expert, account_id) is not None
+            expert = db.get(Expert, account_id)
+            return subject is not None and int(subject) == account_id and expert is not None and expert.is_active
 
         if account_type in {"user", "customer", "admin", "operator"} and subject:
             user = db.query(User).filter(User.email == subject).first()
-            if user is None or user.id != account_id:
+            if user is None or user.id != account_id or not _user_can_use_realtime(user):
                 return False
             return (account_type == "admin" and role == "admin") or (
                 account_type in {"user", "customer"} and role == "customer"

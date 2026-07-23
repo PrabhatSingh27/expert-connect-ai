@@ -16,6 +16,7 @@ from app.models.issue import Issue
 from app.auth.dependencies import get_current_operator, get_current_user
 from app.schemas.operator import OperatorIssueUpdate
 from app.services.issue_service import create_issue
+from app.services.admin_service import override_issue_expert
 from app.services.operator_service import (
     backfill_operator_review_assignments,
     list_operator_issues,
@@ -67,6 +68,18 @@ class _OperatorDatabase:
 
     def rollback(self):
         pass
+
+
+class _AdminAssignmentDatabase:
+    def __init__(self, expert):
+        self.expert = expert
+        self.committed = False
+
+    def query(self, *_args):
+        return _OperatorQuery(self.expert)
+
+    def commit(self):
+        self.committed = True
 
 
 class _ReviewOwnershipQuery:
@@ -253,6 +266,54 @@ class OperatorOverrideTests(TestCase):
 
         self.assertEqual(error.exception.status_code, 400)
 
+    def test_operator_can_force_assign_an_active_verified_expert_outside_ai_matches(self):
+        issue = SimpleNamespace(
+            id=8,
+            problem_type="General",
+            category="General",
+            priority="low",
+            urgency="low",
+            operator_note=None,
+            assigned_expert_id=None,
+            review_operator_id=3,
+            assigned_at=None,
+            status="waiting_for_assignment",
+            admin_override_at=None,
+        )
+        expert = SimpleNamespace(id=10, is_active=True, is_verified=True)
+        db = _OperatorDatabase(expert)
+
+        with (
+            patch("app.services.operator_service.get_operator_issue", return_value=issue),
+            patch("app.services.operator_service.eligible_experts_for_issue", return_value=[]),
+            patch("app.services.operator_service.publish_issue_update"),
+        ):
+            result = override_issue_decisions(
+                db,
+                issue.id,
+                3,
+                OperatorIssueUpdate(assignedExpertId=10),
+            )
+
+        self.assertIs(result, issue)
+        self.assertEqual(issue.assigned_expert_id, 10)
+        self.assertEqual(issue.status, "assigned")
+
+    def test_operator_cannot_override_after_admin_override(self):
+        issue = SimpleNamespace(
+            id=8,
+            assigned_expert_id=None,
+            review_operator_id=3,
+            admin_override_at="2026-07-22T00:00:00+00:00",
+        )
+        db = _OperatorDatabase(expert=None)
+
+        with patch("app.services.operator_service.get_operator_issue", return_value=issue):
+            with self.assertRaises(HTTPException) as error:
+                override_issue_decisions(db, issue.id, 3, OperatorIssueUpdate(priority="high"))
+
+        self.assertEqual(error.exception.status_code, 409)
+
     def test_operator_payload_rejects_invalid_priority(self):
         with self.assertRaises(ValidationError):
             OperatorIssueUpdate(priority="immediate")
@@ -305,6 +366,68 @@ class OperatorOverrideTests(TestCase):
                 get_current_user(credentials, db)
 
         self.assertEqual(error.exception.status_code, 403)
+
+    def test_suspended_operator_cannot_authenticate(self):
+        suspended_operator = SimpleNamespace(
+            email="op2@gmail.com",
+            is_active=True,
+            account_status="suspended",
+        )
+        db = SimpleNamespace(
+            query=lambda *_args: SimpleNamespace(
+                filter=lambda *_filters: SimpleNamespace(first=lambda: suspended_operator)
+            )
+        )
+        credentials = SimpleNamespace(credentials="test-token")
+
+        with patch("app.auth.dependencies._decode_token", return_value={"sub": "op2@gmail.com"}):
+            with self.assertRaises(HTTPException) as error:
+                get_current_user(credentials, db)
+
+        self.assertEqual(error.exception.status_code, 403)
+        self.assertEqual(error.exception.detail, "Suspended")
+
+
+class AdminAssignmentTests(TestCase):
+    def test_assignment_returns_reloaded_assigned_expert_and_broadcasts_it(self):
+        prior_issue = SimpleNamespace(
+            id=8,
+            assigned_expert_id=None,
+            assigned_at=None,
+            status="waiting_for_assignment",
+            admin_override_at=None,
+        )
+        expert = SimpleNamespace(id=9)
+        response_issue = SimpleNamespace(
+            id=8,
+            assigned_expert_id=9,
+            assigned_expert=SimpleNamespace(id=9, full_name="Expert One"),
+        )
+        db = _AdminAssignmentDatabase(expert)
+
+        with (
+            patch(
+                "app.services.admin_service._get_issue_with_assigned_expert",
+                side_effect=[prior_issue, response_issue],
+            ),
+            patch("app.services.admin_service.publish_issue_update") as publish,
+        ):
+            result = override_issue_expert(db, issue_id=8, expert_id=9)
+
+        self.assertTrue(db.committed)
+        self.assertIs(result, response_issue)
+        self.assertEqual(prior_issue.assigned_expert_id, 9)
+        publish.assert_called_once_with(response_issue, "admin_override", previous_expert_id=None)
+
+    def test_assignment_returns_none_for_missing_issue_or_expert(self):
+        db = _AdminAssignmentDatabase(expert=SimpleNamespace(id=9))
+        with patch("app.services.admin_service._get_issue_with_assigned_expert", return_value=None):
+            self.assertIsNone(override_issue_expert(db, issue_id=999, expert_id=9))
+
+        issue = SimpleNamespace(id=8)
+        db = _AdminAssignmentDatabase(expert=None)
+        with patch("app.services.admin_service._get_issue_with_assigned_expert", return_value=issue):
+            self.assertIsNone(override_issue_expert(db, issue_id=8, expert_id=999))
 
 
 class WebsocketIssueEventTests(IsolatedAsyncioTestCase):

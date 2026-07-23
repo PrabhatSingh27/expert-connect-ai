@@ -9,6 +9,7 @@ from app.database.session import SessionLocal
 from fastapi import HTTPException
 
 from app.auth.dependencies import get_current_account
+from app.auth.dependencies import _ensure_user_can_authenticate
 from app.models.user import User
 
 from app.schemas.auth import (
@@ -84,6 +85,8 @@ def login(
     if not user:
         return expert_login(db, user_data)
 
+    _ensure_user_can_authenticate(user)
+
     normalized_role = (user.role or "customer").strip().lower()
     account_type = (
         "admin"
@@ -107,6 +110,7 @@ def login(
         "user_id": user.id,
         "role": normalized_role,
         "account_type": account_type,
+        "account_status": user.account_status,
         "is_expert": False,
         "is_admin": normalized_role == "admin",
         "is_verified": None,

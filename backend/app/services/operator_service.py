@@ -23,6 +23,7 @@ OPERATOR_REVIEW_QUEUE_STATUSES = (
     "submitted",
     "ai_classified",
     "waiting_for_assignment",
+    "pending_assignment",
     "operator_review",
     "need_more_info",
     "assigned",
@@ -31,27 +32,38 @@ OPERATOR_REVIEW_QUEUE_STATUSES = (
 OPEN_OPERATOR_STATUSES = ("assigned", "in_progress")
 
 
-def get_primary_review_operator(db: Session) -> User:
+def get_primary_review_operator(db: Session) -> User | None:
     operator = (
         db.query(User)
         .filter(
             User.email == PRIMARY_OPERATOR_EMAIL,
             User.role == "operator",
             User.is_active.is_(True),
+            User.account_status == "active",
         )
         .first()
     )
-    if operator is None:
-        raise HTTPException(
-            status_code=503,
-            detail="Primary operator account is not provisioned",
+    if operator is not None:
+        return operator
+
+    return (
+        db.query(User)
+        .filter(
+            User.role == "operator",
+            User.is_active.is_(True),
+            User.account_status == "active",
         )
-    return operator
+        .order_by(User.id.asc())
+        .first()
+    )
 
 
-def assign_primary_operator_review(db: Session, issue: Issue) -> User:
-    """Set Op1 as review owner without changing customer or expert assignment."""
+def assign_primary_operator_review(db: Session, issue: Issue) -> User | None:
+    """Set an active operator as review owner without changing expert assignment."""
     operator = get_primary_review_operator(db)
+    if operator is None:
+        logger.warning("operator_review_assignment_skipped issue_id=%s", getattr(issue, "id", None))
+        return None
     issue.review_operator_id = operator.id
     return operator
 
@@ -98,13 +110,21 @@ def list_operator_queue(db: Session, operator_id: int) -> list[Issue]:
     )
 
 
-def get_operator_issue(db: Session, issue_id: int, operator_id: int) -> Issue:
-    issue = (
+def get_operator_issue(
+    db: Session,
+    issue_id: int,
+    operator_id: int,
+    *,
+    lock_for_update: bool = False,
+) -> Issue:
+    query = (
         db.query(Issue)
         .options(joinedload(Issue.assigned_expert))
         .filter(Issue.id == issue_id, Issue.review_operator_id == operator_id)
-        .first()
     )
+    if lock_for_update:
+        query = query.with_for_update()
+    issue = query.first()
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
     return issue
@@ -116,7 +136,12 @@ def _eligible_expert_ids(db: Session, issue: Issue) -> set[int]:
 
 def override_issue_decisions(db: Session, issue_id: int, operator_id: int, data) -> Issue:
     """Apply an operator's optional triage and assignment corrections safely."""
-    issue = get_operator_issue(db, issue_id, operator_id)
+    issue = get_operator_issue(db, issue_id, operator_id, lock_for_update=True)
+    if getattr(issue, "admin_override_at", None) is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Admin override is authoritative for this issue",
+        )
     previous_expert_id = issue.assigned_expert_id
     update_data = data.model_dump(exclude_unset=True)
 
@@ -131,17 +156,12 @@ def override_issue_decisions(db: Session, issue_id: int, operator_id: int, data)
         if not expert.is_active or not expert.is_verified:
             raise HTTPException(status_code=400, detail="Expert must be active and verified")
 
-        # Apply classification changes before checking eligibility, so an
-        # operator cannot assign an expert who does not fit the corrected triage.
+        # An operator's deliberate selection is authoritative.  Availability,
+        # location, and AI skill matching are recommendations, not a block on
+        # human assignment.  The account must still be active and verified.
         for field in ("problem_type", "category", "priority", "urgency", "operator_note"):
             if field in update_data:
                 setattr(issue, field, update_data[field])
-
-        if expert.id not in _eligible_expert_ids(db, issue):
-            raise HTTPException(
-                status_code=400,
-                detail="Expert is not eligible for this issue's skills, service area, or availability",
-            )
 
         issue.assigned_expert_id = expert.id
         issue.assigned_at = datetime.now(timezone.utc)

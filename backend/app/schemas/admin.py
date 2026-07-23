@@ -7,6 +7,10 @@ class AccountStatusUpdate(BaseModel):
     is_active: bool = Field(alias="isActive")
 
 
+class OperatorSuspensionUpdate(BaseModel):
+    suspended: bool
+
+
 class ExpertVerificationUpdate(BaseModel):
     is_verified: bool = Field(alias="isVerified")
 

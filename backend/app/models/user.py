@@ -15,6 +15,7 @@ class User(Base):
     phone_number = Column(String, nullable=False, default="", server_default="")
     profile_image_url = Column(String, nullable=True)
     role = Column(String, nullable=False, default="customer", server_default="customer")
+    account_status = Column(String, nullable=False, default="active", server_default="active")
     is_active = Column(Boolean, nullable=False, default=True, server_default="true")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 

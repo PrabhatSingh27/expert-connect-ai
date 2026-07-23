@@ -18,6 +18,7 @@ ALLOWED_ISSUE_STATUSES = {
     "submitted",
     "ai_classified",
     "waiting_for_assignment",
+    "pending_assignment",
     "operator_review",
     "need_more_info",
     "assigned",

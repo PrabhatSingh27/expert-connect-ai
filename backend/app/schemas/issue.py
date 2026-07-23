@@ -22,6 +22,7 @@ class IssueStatus(StrEnum):
     submitted = "submitted"
     ai_classified = "ai_classified"
     waiting_for_assignment = "waiting_for_assignment"
+    pending_assignment = "pending_assignment"
     operator_review = "operator_review"
     need_more_info = "need_more_info"
     assigned = "assigned"

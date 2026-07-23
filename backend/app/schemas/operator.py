@@ -4,7 +4,12 @@ from app.schemas.issue import IssueStatus, IssueUrgency
 
 
 class OperatorModel(BaseModel):
-    model_config = ConfigDict(populate_by_name=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+        alias_generator=lambda value: value.split("_")[0] + "".join(
+            word.capitalize() for word in value.split("_")[1:]
+        ),
+    )
 
 
 class OperatorIssueUpdate(OperatorModel):

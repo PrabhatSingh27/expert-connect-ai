@@ -26,6 +26,21 @@ class ConnectionManager:
         if not connections:
             self.active_connections.pop(key, None)
 
+    async def close_account_connections(
+        self,
+        account_type: str,
+        account_id: int,
+        *,
+        code: int = 4003,
+        reason: str = "Account unavailable",
+    ) -> None:
+        key = (account_type, account_id)
+        for connection in list(self.active_connections.get(key, set())):
+            try:
+                await connection.close(code=code, reason=reason)
+            finally:
+                self.disconnect(connection, account_type, account_id)
+
     async def send_personal_message(self, data: dict[str, Any], account_type: str, account_id: int) -> None:
         key = (account_type, account_id)
         for connection in list(self.active_connections.get(key, set())):
@@ -95,7 +110,19 @@ async def broadcast_issue_update(
         await manager.send_personal_message(payload, "expert", issue["assignedExpertId"])
     if previous_expert_id is not None and previous_expert_id != issue["assignedExpertId"]:
         await manager.send_personal_message(payload, "expert", previous_expert_id)
-    if issue["reviewOperatorId"] is not None:
+    operator_queue_event = issue.get("status") in {
+        "submitted",
+        "ai_classified",
+        "waiting_for_assignment",
+        "pending_assignment",
+        "operator_review",
+        "need_more_info",
+        "assigned",
+        "in_progress",
+    }
+    if operator_queue_event:
+        await manager.broadcast_to_account_type(payload, "operator")
+    elif issue["reviewOperatorId"] is not None:
         await manager.send_personal_message(payload, "operator", issue["reviewOperatorId"])
     await manager.broadcast_to_account_type(payload, "admin")
 
@@ -115,3 +142,32 @@ def publish_issue_update(
         broadcast_issue_update(payload, previous_expert_id=previous_expert_id),
         loop,
     )
+
+
+async def broadcast_account_status_update(payload: dict[str, Any]) -> None:
+    await manager.broadcast_to_account_type(payload, "admin")
+    if payload.get("role") == "operator":
+        operator_id = payload.get("id")
+        if operator_id is not None:
+            await manager.send_personal_message(payload, "operator", operator_id)
+            if payload.get("accountStatus") == "suspended":
+                await manager.close_account_connections(
+                    "operator",
+                    operator_id,
+                    code=4003,
+                    reason="Suspended",
+                )
+
+
+def publish_account_status_update(user: Any) -> None:
+    loop = manager.event_loop
+    if loop is None or not loop.is_running():
+        return
+    payload = {
+        "event": "account_status_updated",
+        "id": user.id,
+        "role": user.role,
+        "isActive": user.is_active,
+        "accountStatus": getattr(user, "account_status", None) or "active",
+    }
+    asyncio.run_coroutine_threadsafe(broadcast_account_status_update(payload), loop)
