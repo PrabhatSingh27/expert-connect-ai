@@ -3,15 +3,49 @@ import { HttpError, apiRequest } from "./http";
 export type IssueStatus = "open" | "ai_classified" | "waiting_for_assignment" | "assigned" | "accepted" | "in_progress" | "resolved" | "closed" | "submitted" | "operator_review" | "need_more_info" | "completed" | "rejected";
 export type IssuePriority = "low" | "medium" | "high" | "critical";
 export type IssueMedia = { id: string; url: string; type: "image" | "video" | "audio"; fileName: string };
-export type AiResult = { detectedProblem?: string; category?: string; urgency?: string; confidence?: number; assignedExpert?: string; estimatedResponseTime?: string; priority?: IssuePriority };
+export type IssueAttachment = { id?: string | number; fileUrl: string; fileType: string; fileName?: string; contentType?: string };
+export type ExpertSummary = {
+  id?: string | number;
+  fullName?: string;
+  name?: string;
+  email?: string;
+  phone?: string;
+  skills?: string[] | string;
+  serviceArea?: string;
+  experienceYears?: number;
+  rating?: number;
+  isAvailable?: boolean;
+};
+
+export type AiResult = {
+  detectedProblem?: string;
+  category?: string;
+  urgency?: string;
+  confidence?: number;
+
+  assignedExpert?: string;
+  assignedExpertId?: string | number;
+
+  expert?: ExpertSummary;
+
+  estimatedResponseTime?: string;
+
+  response?: string;
+  responseStatus?: string;
+
+  priority?: IssuePriority;
+};
+
 export type Issue = {
   id: string | number; title: string; description: string; status: IssueStatus; priority?: IssuePriority; category?: string; problemType?: string; urgency?: string; requiredSkills?: string[]; confidenceScore?: number; aiExplanation?: string;
   preferredVisitDate?: string; preferredTime?: string; location?: string; address?: string; pinCode?: string;
   assignedExpertId?: string | number; assignedExpertName?: string; assignedOperatorId?: string | number; assignedOperatorName?: string;
-  aiResult?: AiResult; media?:IssueMedia[]; attachments?: unknown[]; createdAt: string; updatedAt?: string;
+  assignedExpert?: ExpertSummary; expert?: ExpertSummary;
+  aiResult?: AiResult; media?:IssueMedia[]; attachments?: IssueAttachment[]; createdAt: string; updatedAt?: string;
 };
 export type ClassifyIssuePayload = { issueId?: string | number; title: string; description: string; location?: string; mediaIds?: string[] };
 export type CreateIssuePayload = { title: string; description: string; category?: string; priority?: string; urgency?: string; requiredSkills?: string[]; preferredVisitDate?: string; preferredTime?: string; location: string; address: string; pinCode: string; mediaIds?: string[]; files?: File[] };
+export type ChatMessage = { id: string | number; issueId?: string | number; senderId?: string | number; senderType?: string; message: string; createdAt?: string };
 
 type RawAiResult = AiResult & { detected_problem?: string; assigned_expert?: string; estimated_response_time?: string; confidence_score?: number };
 type RawIssue = Issue & Record<string, any>;
@@ -20,7 +54,28 @@ function normalizeAiResult(result: RawAiResult): AiResult {
   return { detectedProblem: result.detectedProblem ?? result.detected_problem ?? (result as any).problemType ?? (result as any).problem_type, category: result.category, urgency: result.urgency, confidence: result.confidence ?? result.confidence_score, assignedExpert: result.assignedExpert ?? result.assigned_expert, estimatedResponseTime: result.estimatedResponseTime ?? result.estimated_response_time, priority: result.priority };
 }
 function normalizeIssue(raw: RawIssue): Issue {
-  const issue = { ...raw, problemType: raw.problemType ?? raw.problem_type, requiredSkills: raw.requiredSkills ?? raw.required_skills, confidenceScore: raw.confidenceScore ?? raw.confidence_score, aiExplanation: raw.aiExplanation ?? raw.ai_explanation, preferredVisitDate: raw.preferredVisitDate ?? raw.preferred_visit_date, preferredTime: raw.preferredTime ?? raw.preferred_time, pinCode: raw.pinCode ?? raw.pin_code, assignedExpertId: raw.assignedExpertId ?? raw.assigned_expert_id, assignedAt: raw.assignedAt ?? raw.assigned_at, createdAt: raw.createdAt ?? raw.created_at, updatedAt: raw.updatedAt ?? raw.updated_at } as Issue;
+  const rawExpert = raw.assignedExpert ?? raw.assigned_expert ?? raw.expert;
+  const rawAttachments = raw.attachments ?? raw.media ?? raw.issue_attachments ?? raw.files ?? [];
+  const attachments = Array.isArray(rawAttachments) ? rawAttachments.map((item: any) => ({
+    id: item.id,
+    fileUrl: item.fileUrl ?? item.file_url ?? item.url ?? item.path ?? "",
+    fileType: item.fileType ?? item.file_type ?? item.type ?? item.contentType ?? item.content_type ?? "",
+    fileName: item.fileName ?? item.file_name ?? item.name,
+    contentType: item.contentType ?? item.content_type,
+  })).filter((item: IssueAttachment) => item.fileUrl) : [];
+  const assignedExpert = rawExpert ? {
+    id: rawExpert.id,
+    fullName: rawExpert.fullName ?? rawExpert.full_name ?? rawExpert.name,
+    name: rawExpert.name,
+    email: rawExpert.email,
+    phone: rawExpert.phone ?? rawExpert.mobile ?? rawExpert.mobileNo ?? rawExpert.mobile_no,
+    skills: rawExpert.skills,
+    serviceArea: rawExpert.serviceArea ?? rawExpert.service_area,
+    experienceYears: rawExpert.experienceYears ?? rawExpert.experience_years,
+    rating: rawExpert.rating,
+    isAvailable: rawExpert.isAvailable ?? rawExpert.is_available,
+  } : undefined;
+  const issue = { ...raw, problemType: raw.problemType ?? raw.problem_type, requiredSkills: raw.requiredSkills ?? raw.required_skills, confidenceScore: raw.confidenceScore ?? raw.confidence_score, aiExplanation: raw.aiExplanation ?? raw.ai_explanation, preferredVisitDate: raw.preferredVisitDate ?? raw.preferred_visit_date, preferredTime: raw.preferredTime ?? raw.preferred_time, pinCode: raw.pinCode ?? raw.pin_code, assignedExpertId: raw.assignedExpertId ?? raw.assigned_expert_id ?? assignedExpert?.id, assignedExpertName: raw.assignedExpertName ?? raw.assigned_expert_name ?? assignedExpert?.fullName ?? assignedExpert?.name, assignedExpert, expert: assignedExpert, assignedAt: raw.assignedAt ?? raw.assigned_at, attachments, createdAt: raw.createdAt ?? raw.created_at, updatedAt: raw.updatedAt ?? raw.updated_at } as Issue;
   issue.aiResult = issue.aiResult ?? normalizeAiResult({ category: issue.category, urgency: issue.urgency, priority: issue.priority, confidence: issue.confidenceScore, detectedProblem: issue.problemType });
   return issue;
 }
@@ -48,6 +103,27 @@ export async function listIssues(params?: { status?: string; mine?: boolean; ass
   const rows = await apiRequest<RawIssue[]>(`/issues/${query.size ? `?${query}` : ""}`);
   return rows.map(normalizeIssue);
 }
+async function tryListIssues(endpoint: string) {
+  const rows = await apiRequest<RawIssue[]>(endpoint);
+  return rows.map(normalizeIssue);
+}
+function uniqueIssues(rows: Issue[]) {
+  return Array.from(new Map(rows.map((issue) => [String(issue.id), issue])).values());
+}
+export async function listOperatorIssues() {
+  const endpoints = [
+    "/operator/issues",
+    "/operator/issues/",
+    "/issues/?status=submitted",
+    "/issues/?status=operator_review",
+    "/issues/?status=waiting_for_assignment",
+    "/issues/",
+  ];
+  const results = await Promise.allSettled(endpoints.map((endpoint) => tryListIssues(endpoint)));
+  const issues = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  if (issues.length) return uniqueIssues(issues);
+  return listIssues();
+}
 export async function classifyIssue(payload: ClassifyIssuePayload, files: File[] = []) {
   if (payload.issueId) return normalizeAiResult(await apiRequest<RawAiResult>(`/issues/${payload.issueId}/classify`, { method: "POST" }));
   let lastError: unknown;
@@ -65,10 +141,43 @@ export async function updateIssue(issueId: string | number, payload: Partial<Cre
 export function deleteIssue(issueId: string | number) { return apiRequest<{ message: string }>(`/issues/${issueId}`, { method: "DELETE" }); }
 export function updateIssueStatus(issueId: string | number, status: IssueStatus) { return apiRequest<Issue>(`/experts/issues/${issueId}/status`, { method: "PATCH", body: JSON.stringify({ status }) }); }
 export function updateIssuePriority(issueId: string | number, priority: IssuePriority) { return updateIssue(issueId, { priority }); }
-export function assignIssue(issueId: string | number, expertId?: string | number) { return expertId ? apiRequest<Issue>(`/issues/${issueId}/assign`, { method: "POST", body: JSON.stringify({ expertId, expert_id: expertId }) }) : apiRequest<Issue>(`/issues/${issueId}/assign-best`, { method: "POST" }); }
+export function assignBestIssue(issueId: string | number) { return apiRequest<Issue>(`/issues/${issueId}/assign-best`, { method: "POST" }); }
+export function assignIssueAsAdmin(issueId: string | number, expertId: string | number) { return apiRequest<Issue>(`/admin/issues/${issueId}/assign-expert`, { method: "PATCH", body: JSON.stringify({ expertId, expert_id: expertId }) }); }
+export function assignIssueAsOperator(issueId: string | number, expertId: string | number) { return apiRequest<Issue>(`/operator/issues/${issueId}`, { method: "PATCH", body: JSON.stringify({ assignedExpertId: expertId, assigned_expert_id: expertId }) }); }
+export function assignIssue(issueId: string | number, expertId?: string | number, role: "admin" | "operator" = "admin") { if (!expertId) return assignBestIssue(issueId); return role === "operator" ? assignIssueAsOperator(issueId, expertId) : assignIssueAsAdmin(issueId, expertId); }
+export async function autoAssignIssueRoundRobin(issueId: string | number, experts: Array<{ id: string | number; isActive?: boolean; isVerified?: boolean }> = []) {
+  const availableExperts = experts.filter((expert) => expert.id && expert.isActive !== false && expert.isVerified !== false);
+  if (!availableExperts.length) return assignBestIssue(issueId);
+  const key = "expert_connect_round_robin_index";
+  const current = typeof window === "undefined" ? 0 : Number(window.localStorage.getItem(key) || "0");
+  const expert = availableExperts[current % availableExperts.length];
+  if (typeof window !== "undefined") window.localStorage.setItem(key, String((current + 1) % availableExperts.length));
+  try { return await assignIssueAsOperator(issueId, expert.id); }
+  catch (operatorError) {
+    try { return await assignIssueAsAdmin(issueId, expert.id); }
+    catch {
+      try { return await assignBestIssue(issueId); }
+      catch { throw operatorError; }
+    }
+  }
+}
 export function getIssueMatches(issueId: string | number) { return apiRequest<Array<{ expert_id: number; full_name: string; score: number; skills?: string; service_area?: string }>>(`/issues/${issueId}/matches`); }
 export async function assignOperator(issueId: string | number, operatorId: string | number) {
   try { return await apiRequest<Issue>(`/issues/${issueId}/assign-operator`, { method: "POST", body: JSON.stringify({ operatorId }) }); }
   catch (error) { if (error instanceof HttpError && [404, 405].includes(error.status)) return apiRequest<Issue>(`/admin/issues/${issueId}/assign-operator`, { method: "POST", body: JSON.stringify({ operatorId }) }); throw error; }
 }
 export function addIssueNote(issueId: string | number, note: string) { return apiRequest<Issue>(`/issues/${issueId}/notes`, { method: "POST", body: JSON.stringify({ note }) }); }
+export async function listIssueMessages(issueId: string | number) {
+  const rows = await apiRequest<Array<Record<string, any>>>(`/issues/${issueId}/messages`);
+  return rows.map((item) => ({
+    id: item.id,
+    issueId: item.issueId ?? item.issue_id,
+    senderId: item.senderId ?? item.sender_id,
+    senderType: item.senderType ?? item.sender_type,
+    message: item.message ?? "",
+    createdAt: item.createdAt ?? item.created_at,
+  })) as ChatMessage[];
+}
+export function sendIssueMessage(issueId: string | number, message: string) {
+  return apiRequest<ChatMessage>(`/issues/${issueId}/messages`, { method: "POST", body: JSON.stringify({ message }) });
+}

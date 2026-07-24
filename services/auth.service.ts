@@ -2,7 +2,7 @@ import { apiRequest } from "./http";
 
 export type UserRole = "admin" | "operator" | "customer" | "expert" | "technician";
 export type AuthUser = { id: string | number; name: string; email: string; role: UserRole; phone?: string; phone_number?: string; avatarUrl?: string; profile_image_url?: string; accountType?: string; isExpert?: boolean; isAdmin?: boolean; isVerified?: boolean };
-export type RegisterPayload = { name: string; email: string; password: string; phoneNumber: string; photo?: File };
+export type RegisterPayload = { name: string; email: string; password: string; phoneNumber?: string; role?: UserRole; photo?: File };
 export type UpdateUserProfilePayload = { name?: string; email?: string; phone?: string; profileImage?: File };
 export type LoginPayload = { email: string; password: string };
 export type LoginResponse = { access_token?: string; accessToken?: string; token?: string; token_type?: string; tokenType?: string; user?: AuthUser; role?: UserRole; accountType?: string; isExpert?: boolean; isAdmin?: boolean; name?: string };
@@ -12,7 +12,8 @@ export function register(payload: RegisterPayload) {
   body.append("name", payload.name);
   body.append("email", payload.email);
   body.append("password", payload.password);
-  body.append("phone_number", payload.phoneNumber);
+  if (payload.phoneNumber) body.append("phone_number", payload.phoneNumber);
+  if (payload.role) body.append("role", payload.role);
   if (payload.photo) body.append("photo", payload.photo);
   return apiRequest<AuthUser>("/auth/register", { method: "POST", body, auth: false });
 }
