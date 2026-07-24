@@ -117,13 +117,17 @@ def get_operator_issue(
     *,
     lock_for_update: bool = False,
 ) -> Issue:
-    query = (
-        db.query(Issue)
-        .options(joinedload(Issue.assigned_expert))
-        .filter(Issue.id == issue_id, Issue.review_operator_id == operator_id)
+    # PostgreSQL rejects ``FOR UPDATE`` on the nullable side of the OUTER JOIN
+    # emitted by joinedload(Issue.assigned_expert). Lock only the Issue row;
+    # response-only reads below may eager-load the expert relationship.
+    query = db.query(Issue).filter(
+        Issue.id == issue_id,
+        Issue.review_operator_id == operator_id,
     )
     if lock_for_update:
-        query = query.with_for_update()
+        query = query.with_for_update(of=Issue)
+    else:
+        query = query.options(joinedload(Issue.assigned_expert))
     issue = query.first()
     if issue is None:
         raise HTTPException(status_code=404, detail="Issue not found")
@@ -177,7 +181,9 @@ def override_issue_decisions(db: Session, issue_id: int, operator_id: int, data)
 
     try:
         db.commit()
-        db.refresh(issue)
+        # Load the selected expert for the REST response and WebSocket payload
+        # after the row lock has been released.
+        issue = get_operator_issue(db, issue_id, operator_id)
     except SQLAlchemyError as exc:
         db.rollback()
         logger.exception("operator_issue_override_failed issue_id=%s", issue_id)

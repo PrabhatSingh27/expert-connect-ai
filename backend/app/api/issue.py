@@ -1,7 +1,7 @@
 from datetime import date
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import get_current_user, get_db
@@ -25,6 +25,8 @@ from app.services.issue_service import (
 )
 from app.services.file_storage_service import validate_single_issue_media_uploads
 from app.services.matching_service import match_experts_for_issue
+from app.schemas.operator import OperatorIssueUpdate
+from app.services.operator_service import override_issue_decisions
 from app.utils.file_validator import validate_upload_file
 
 router = APIRouter(
@@ -172,6 +174,35 @@ async def edit_issue(
         if upload is not None:
             await upload.read()
             await upload.seek(0)
+
+    # Compatibility for the existing dashboard request path. Operators are
+    # permitted to adjust only their own review queue's triage fields; all
+    # ownership, suspension, and Admin-override protections remain in
+    # override_issue_decisions.
+    if (current_user.role or "").strip().lower() == "operator":
+        if any(upload is not None for upload in media.values()):
+            raise HTTPException(status_code=403, detail="Operators cannot replace customer media")
+
+        operator_fields = {
+            "problem_type",
+            "category",
+            "priority",
+            "urgency",
+            "status",
+        }
+        update_data = data.model_dump(exclude_unset=True)
+        unsupported_fields = set(update_data).difference(operator_fields)
+        if unsupported_fields:
+            raise HTTPException(
+                status_code=403,
+                detail="Operators may update only issue triage fields",
+            )
+        return override_issue_decisions(
+            db,
+            issue_id,
+            current_user.id,
+            OperatorIssueUpdate.model_validate(update_data),
+        )
 
     return update_issue(
         db,

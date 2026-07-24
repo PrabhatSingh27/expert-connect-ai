@@ -5,6 +5,9 @@ from app.models.expert_review import ExpertReview
 from app.models.issue import Issue
 
 
+REVIEWABLE_ISSUE_STATUSES = {"assigned", "in_progress", "completed", "closed"}
+
+
 def create_review(db: Session, issue_id: int, customer_id: int, data):
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
 
@@ -14,11 +17,14 @@ def create_review(db: Session, issue_id: int, customer_id: int, data):
     if issue.customer_id != customer_id:
         raise HTTPException(status_code=403, detail="Not authorized")
 
-    if issue.status not in {"completed", "closed"}:
-        raise HTTPException(status_code=400, detail="Reviews can be submitted only after resolution")
-
     if not issue.assigned_expert_id:
         raise HTTPException(status_code=400, detail="Issue has no assigned expert")
+
+    # The customer UI is available once an expert has been assigned.  Do not
+    # reject a valid rating merely because the expert has not yet marked the
+    # job completed in their separate dashboard.
+    if issue.status not in REVIEWABLE_ISSUE_STATUSES:
+        raise HTTPException(status_code=400, detail="Reviews are available after an expert is assigned")
 
     existing_review = (
         db.query(ExpertReview)
@@ -29,7 +35,10 @@ def create_review(db: Session, issue_id: int, customer_id: int, data):
         .first()
     )
     if existing_review:
-        raise HTTPException(status_code=400, detail="Review already submitted")
+        # /feedback and /reviews are compatibility aliases used by older
+        # clients. Returning the existing record makes duplicate submissions
+        # idempotent instead of surfacing a misleading 400 to the customer.
+        return existing_review
 
     review = ExpertReview(
         issue_id=issue.id,

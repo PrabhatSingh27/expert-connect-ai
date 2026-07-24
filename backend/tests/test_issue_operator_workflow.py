@@ -51,6 +51,9 @@ class _OperatorQuery:
     def first(self):
         return self.expert
 
+    def with_for_update(self, **_kwargs):
+        return self
+
 
 class _OperatorDatabase:
     def __init__(self, expert):
@@ -317,6 +320,10 @@ class OperatorOverrideTests(TestCase):
     def test_operator_payload_rejects_invalid_priority(self):
         with self.assertRaises(ValidationError):
             OperatorIssueUpdate(priority="immediate")
+
+    def test_operator_assignment_payload_accepts_browser_and_admin_field_names(self):
+        self.assertEqual(OperatorIssueUpdate(assignedExpertId="9").assigned_expert_id, 9)
+        self.assertEqual(OperatorIssueUpdate(expertId=10).assigned_expert_id, 10)
 
     def test_customer_cannot_satisfy_operator_dependency(self):
         with self.assertRaises(HTTPException) as error:

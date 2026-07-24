@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict, StrictInt, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.schemas.issue import IssueStatus, IssueUrgency
 
@@ -18,7 +18,18 @@ class OperatorIssueUpdate(OperatorModel):
     category: str | None = None
     urgency: IssueUrgency | None = None
     priority: IssueUrgency | None = None
-    assigned_expert_id: StrictInt | None = None
+    # Browser <select> values are strings.  Accept both the Admin-style
+    # expertId and the operator-style assignedExpertId so an assignment is not
+    # rejected with 422 before reaching the service layer.
+    assigned_expert_id: int | None = Field(
+        default=None,
+        validation_alias=AliasChoices(
+            "assigned_expert_id",
+            "assignedExpertId",
+            "expert_id",
+            "expertId",
+        ),
+    )
     operator_note: str | None = None
 
     @field_validator("problem_type", "category")
