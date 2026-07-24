@@ -1,5 +1,13 @@
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://172.17.38.216:8000";
 
+export function assetUrl(value?: string | null) {
+  if (!value) return "";
+  if (value.startsWith("blob:") || value.startsWith("data:") || /^https?:\/\//i.test(value)) return value;
+  const base = API_BASE_URL.replace(/\/$/, "");
+  const path = value.startsWith("/") ? value : `/${value}`;
+  return `${base}${path}`;
+}
+
 export class HttpError extends Error {
   status: number;
   data: unknown;

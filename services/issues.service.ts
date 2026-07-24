@@ -32,6 +32,7 @@ export type AiResult = {
 
   response?: string;
   responseStatus?: string;
+  responseMessage?: string;
 
   priority?: IssuePriority;
 };
@@ -46,12 +47,61 @@ export type Issue = {
 export type ClassifyIssuePayload = { issueId?: string | number; title: string; description: string; location?: string; mediaIds?: string[] };
 export type CreateIssuePayload = { title: string; description: string; category?: string; priority?: string; urgency?: string; requiredSkills?: string[]; preferredVisitDate?: string; preferredTime?: string; location: string; address: string; pinCode: string; mediaIds?: string[]; files?: File[] };
 export type ChatMessage = { id: string | number; issueId?: string | number; senderId?: string | number; senderType?: string; message: string; createdAt?: string };
+export type IssueDiagnosisPayload = { detectedProblem: string; response: string };
 
-type RawAiResult = AiResult & { detected_problem?: string; assigned_expert?: string; estimated_response_time?: string; confidence_score?: number };
+type RawAiResult = AiResult & Record<string, any> & { detected_problem?: string; assigned_expert?: string; estimated_response_time?: string; confidence_score?: number };
 type RawIssue = Issue & Record<string, any>;
 const CLASSIFY_ENDPOINTS = ["/issues/classify", "/ai/classify", "/classify"];
+const DIAGNOSIS_STORAGE_KEY = "expert_connect_issue_diagnosis";
+
+function getStoredDiagnoses(): Record<string, IssueDiagnosisPayload> {
+  if (typeof window === "undefined") return {};
+  try { return JSON.parse(window.localStorage.getItem(DIAGNOSIS_STORAGE_KEY) || "{}"); }
+  catch { return {}; }
+}
+
+function getStoredDiagnosis(issueId: string | number) {
+  return getStoredDiagnoses()[String(issueId)];
+}
+
+function saveStoredDiagnosis(issueId: string | number, payload: IssueDiagnosisPayload) {
+  if (typeof window === "undefined") return;
+  const rows = getStoredDiagnoses();
+  rows[String(issueId)] = payload;
+  window.localStorage.setItem(DIAGNOSIS_STORAGE_KEY, JSON.stringify(rows));
+}
+
+function applyDiagnosisOverride(issue: Issue) {
+  const override = getStoredDiagnosis(issue.id);
+  if (!override) return issue;
+  issue.aiResult = {
+    ...(issue.aiResult ?? {}),
+    detectedProblem: override.detectedProblem || issue.aiResult?.detectedProblem,
+    response: override.response || issue.aiResult?.response,
+    responseMessage: override.response || issue.aiResult?.responseMessage,
+  };
+  issue.problemType = override.detectedProblem || issue.problemType;
+  issue.aiExplanation = override.response || issue.aiExplanation;
+  return issue;
+}
+
 function normalizeAiResult(result: RawAiResult): AiResult {
-  return { detectedProblem: result.detectedProblem ?? result.detected_problem ?? (result as any).problemType ?? (result as any).problem_type, category: result.category, urgency: result.urgency, confidence: result.confidence ?? result.confidence_score, assignedExpert: result.assignedExpert ?? result.assigned_expert, estimatedResponseTime: result.estimatedResponseTime ?? result.estimated_response_time, priority: result.priority };
+  const expert = result.expert ?? result.assignedExpertDetails ?? result.assigned_expert_details ?? result.assigned_expert;
+  const expertName = typeof expert === "object" && expert ? expert.fullName ?? expert.full_name ?? expert.name : expert;
+  return {
+    detectedProblem: result.reasoning ?? result.detectedProblem ?? result.detected_problem ?? result.problemType ?? result.problem_type ?? result.detected ?? result.problem ?? result.issueType ?? result.issue_type ?? result.title,
+    category: result.category ?? result.issueCategory ?? result.issue_category ?? result.serviceCategory ?? result.service_category,
+    urgency: result.urgency ?? result.urgencyLevel ?? result.urgency_level,
+    confidence: result.confidence ?? result.confidence_score ?? result.confidenceScore,
+    assignedExpert: result.assignedExpert ?? result.assigned_expert_name ?? result.assignedExpertName ?? expertName,
+    assignedExpertId: result.assignedExpertId ?? result.assigned_expert_id,
+    expert: typeof expert === "object" ? expert : result.expert,
+    estimatedResponseTime: result.estimatedResponseTime ?? result.estimated_response_time ?? result.responseTime ?? result.response_time ?? result.eta,
+    response: result.thought_process ?? result.thoughtProcess ?? result.response ?? result.aiResponse ?? result.ai_response ?? result.recommendation ?? result.explanation ?? result.aiExplanation ?? result.ai_explanation,
+    responseStatus: result.responseStatus ?? result.response_status ?? result.status,
+    responseMessage: result.responseMessage ?? result.response_message ?? result.message,
+    priority: result.priority,
+  };
 }
 function normalizeIssue(raw: RawIssue): Issue {
   const rawExpert = raw.assignedExpert ?? raw.assigned_expert ?? raw.expert;
@@ -76,8 +126,16 @@ function normalizeIssue(raw: RawIssue): Issue {
     isAvailable: rawExpert.isAvailable ?? rawExpert.is_available,
   } : undefined;
   const issue = { ...raw, problemType: raw.problemType ?? raw.problem_type, requiredSkills: raw.requiredSkills ?? raw.required_skills, confidenceScore: raw.confidenceScore ?? raw.confidence_score, aiExplanation: raw.aiExplanation ?? raw.ai_explanation, preferredVisitDate: raw.preferredVisitDate ?? raw.preferred_visit_date, preferredTime: raw.preferredTime ?? raw.preferred_time, pinCode: raw.pinCode ?? raw.pin_code, assignedExpertId: raw.assignedExpertId ?? raw.assigned_expert_id ?? assignedExpert?.id, assignedExpertName: raw.assignedExpertName ?? raw.assigned_expert_name ?? assignedExpert?.fullName ?? assignedExpert?.name, assignedExpert, expert: assignedExpert, assignedAt: raw.assignedAt ?? raw.assigned_at, attachments, createdAt: raw.createdAt ?? raw.created_at, updatedAt: raw.updatedAt ?? raw.updated_at } as Issue;
-  issue.aiResult = issue.aiResult ?? normalizeAiResult({ category: issue.category, urgency: issue.urgency, priority: issue.priority, confidence: issue.confidenceScore, detectedProblem: issue.problemType });
-  return issue;
+  const normalizedAi = normalizeAiResult({ ...(raw.aiResult ?? raw.ai_result ?? {}), category: issue.category, urgency: issue.urgency, priority: issue.priority, confidence: issue.confidenceScore, reasoning: raw.reasoning, thought_process: raw.thought_process, thoughtProcess: raw.thoughtProcess, detectedProblem: raw.reasoning ?? issue.problemType, assignedExpert: issue.assignedExpertName, assignedExpertId: issue.assignedExpertId, expert: assignedExpert, aiExplanation: issue.aiExplanation, response: raw.thought_process ?? raw.thoughtProcess ?? raw.response, responseStatus: raw.responseStatus ?? raw.response_status, estimatedResponseTime: raw.estimatedResponseTime ?? raw.estimated_response_time });
+  const aiFromIssue = issue.aiResult ? normalizeAiResult(issue.aiResult as RawAiResult) : {};
+  issue.aiResult = {
+    ...normalizedAi,
+    ...aiFromIssue,
+    detectedProblem: aiFromIssue.detectedProblem ?? normalizedAi.detectedProblem,
+    response: aiFromIssue.response ?? normalizedAi.response,
+    responseMessage: aiFromIssue.responseMessage ?? normalizedAi.responseMessage,
+  };
+  return applyDiagnosisOverride(issue);
 }
 function buildClassifyFormData(payload: ClassifyIssuePayload, files: File[]) {
   const formData = new FormData();
@@ -180,4 +238,34 @@ export async function listIssueMessages(issueId: string | number) {
 }
 export function sendIssueMessage(issueId: string | number, message: string) {
   return apiRequest<ChatMessage>(`/issues/${issueId}/messages`, { method: "POST", body: JSON.stringify({ message }) });
+}
+export async function updateIssueDiagnosis(issueId: string | number, payload: IssueDiagnosisPayload) {
+  const body = JSON.stringify({
+    detectedProblem: payload.detectedProblem,
+    detected_problem: payload.detectedProblem,
+    expertDetectedProblem: payload.detectedProblem,
+    expert_detected_problem: payload.detectedProblem,
+    response: payload.response,
+    expertResponse: payload.response,
+    expert_response: payload.response,
+    aiExplanation: payload.response,
+    ai_explanation: payload.response,
+  });
+  const endpoints = [
+    `/experts/issues/${issueId}/diagnosis`,
+    `/experts/issues/${issueId}/response`,
+    `/experts/issues/${issueId}/status`,
+    `/issues/${issueId}`,
+  ];
+  let saved: Issue | null = null;
+  for (const endpoint of endpoints) {
+    try {
+      saved = normalizeIssue(await apiRequest<RawIssue>(endpoint, { method: endpoint === `/issues/${issueId}` ? "PUT" : "PATCH", body }));
+      break;
+    } catch {
+      saved = null;
+    }
+  }
+  saveStoredDiagnosis(issueId, payload);
+  return applyDiagnosisOverride(saved ?? ({ id: issueId, title: "", description: "", status: "submitted", createdAt: "", aiResult: {} } as Issue));
 }

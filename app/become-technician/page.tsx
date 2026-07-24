@@ -6,7 +6,7 @@ from "lucide-react";
 const initial = { fullName:"", email:"", phone:"", password:"", governmentId:"", serviceAreaCity:"", pinCode:"", permanentAddress:"", bio:"", experienceYears:"" };
 export default function BecomeTechnicianPage(){
      const [form,setForm]=useState(initial); 
-     const [pic,setPic]=useState<File|null>(null); const [preview,setPreview]=useState("");
+     const [pic,setPic]=useState<File|null>(null); const [preview,setPreview]=useState(""); const [governmentIdFile,setGovernmentIdFile]=useState<File|null>(null);
       const [loading,setLoading]=useState(false);
        const [message,setMessage]=useState("");
         const [error,setError]=useState("");
@@ -17,11 +17,17 @@ export default function BecomeTechnicianPage(){
                setPic(file);
                 setPreview(URL.createObjectURL(file));
                  setError("");
+                } function chooseGovernmentId(file?:File){if(!file)return;
+             if(file.type!=="application/pdf") return setError("Government ID document must be a PDF.");
+              if(file.size>10*1024*1024) return setError("Government ID PDF must be under 10 MB.");
+               setGovernmentIdFile(file);
+                setError("");
                 } function validate(){ if(!form.fullName.trim())return"Full name is required.";
                      if(!form.email.trim())return"Email is required.";
                       if(!form.phone.trim())return"Phone number is required.";
                        if(form.password.length<8)return"Password must be at least 8 characters.";
                         if(!form.governmentId.trim())return"Government issued ID is required.";
+                         if(!governmentIdFile)return"Government issued ID PDF is required.";
                          if(!form.serviceAreaCity.trim())return"Service area city is required.";
                           if(!form.pinCode.trim())return"PIN code is required.";
                            if(!form.permanentAddress.trim())return"Permanent address is required.";
@@ -33,10 +39,11 @@ export default function BecomeTechnicianPage(){
                                      return;} setLoading(true);
                                       setError("");
                                        setMessage("");
-                                        try{await expertSignup({fullName:form.fullName,email:form.email,password:form.password,phone:form.phone,bio:form.bio,skills:"General repair, Home service",serviceArea:`${form.serviceAreaCity} - ${form.pinCode}`,serviceCity:form.serviceAreaCity,servicePincodes:form.pinCode,experienceYears:Number(form.experienceYears),governmentId:form.governmentId,permanentAddress:form.permanentAddress,profileImage:pic || undefined});
+                                        try{await expertSignup({fullName:form.fullName,email:form.email,password:form.password,phone:form.phone,bio:form.bio,skills:"General repair, Home service",serviceArea:`${form.serviceAreaCity} - ${form.pinCode}`,serviceCity:form.serviceAreaCity,servicePincodes:form.pinCode,experienceYears:Number(form.experienceYears),governmentId:form.governmentId,governmentIdFile:governmentIdFile || undefined,permanentAddress:form.permanentAddress,profileImage:pic || undefined});
                                          setMessage("Expert application submitted successfully.");
                                           setForm(initial);
                                            setPic(null);
+                                            setGovernmentIdFile(null);
                                             setPreview("");}catch(err){setError(err instanceof Error?err.message:"Submission failed.");
 
                                             }finally{setLoading(false);
@@ -65,7 +72,7 @@ export default function BecomeTechnicianPage(){
                                                                  required/><textarea className="input min-h-28" placeholder="Bio" value={form.bio}
                                                                   onChange={e=>update("bio",e.target.value)}
                                                                    required maxLength={800}/><div className="rounded-2xl border border-dashed border-slate-300/80 bg-white/45 p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-4"><div className="grid h-20 w-20 place-items-center overflow-hidden rounded-2xl bg-slate-100">{preview?<img src={preview} alt="Profile preview" className="h-full w-full object-cover"/>:<Camera className="text-slate-400" size={28}/>}
-                                                                   </div><div><p className="font-black">Profile Picture</p><p className="mt-1 text-xs text-slate-500">JPG, PNG, WEBP up to 10 MB</p></div></div><label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white"><Upload size={16}/>Upload<input type="file" className="hidden" accept="image/*" onChange={e=>choose(e.target.files?.[0])}/></label></div></div>{error&&<p className="rounded-xl bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-700">{error}</p>}
+                                                                   </div><div><p className="font-black">Profile Picture</p><p className="mt-1 text-xs text-slate-500">JPG, PNG, WEBP up to 10 MB</p></div></div><label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white"><Upload size={16}/>Upload<input type="file" className="hidden" accept="image/*" onChange={e=>choose(e.target.files?.[0])}/></label></div></div><div className="rounded-2xl border border-dashed border-slate-300/80 bg-white/45 p-5"><div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-black">Government ID PDF</p><p className="mt-1 text-xs text-slate-500">{governmentIdFile ? governmentIdFile.name : "Upload a PDF document up to 10 MB"}</p></div><label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white"><Upload size={16}/>Upload PDF<input type="file" className="hidden" accept="application/pdf,.pdf" onChange={e=>chooseGovernmentId(e.target.files?.[0])}/></label></div></div>{error&&<p className="rounded-xl bg-rose-500/10 px-4 py-3 text-sm font-bold text-rose-700">{error}</p>}
                                                                    {message&&<p className="rounded-xl bg-emerald-500/10 px-4 py-3 text-sm font-bold text-emerald-700">{message}</p>}<button type="submit" disabled={loading}
                                                                     className="flex w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 font-black text-white">{loading&&<Loader2 className="animate-spin" size={18}/>} 
                                                                     {loading?"Submitting...":"Submit Expert Application"}
