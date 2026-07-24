@@ -64,7 +64,11 @@ async def register(
     )
     if photo is not None and (photo.filename or photo.content_type):
         await validate_upload_file(photo, "image")
-        user.profile_image_url = save_upload_file(photo, folder="profiles")
+        user.profile_image_url = save_upload_file(
+            photo,
+            folder="users/profile_pic",
+            include_media_subfolder=False,
+        )
     return register_user(db, user)
 
 @router.post(

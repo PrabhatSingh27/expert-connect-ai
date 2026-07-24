@@ -11,6 +11,7 @@ from app.services.ai_classification_service import (
     encode_image_as_data_url,
     transcribe_audio_file,
 )
+from app.schemas.issue import IssueClassificationResponse
 
 
 class _TranscriptClient:
@@ -45,5 +46,24 @@ class MultimodalClassificationTests(TestCase):
              patch("app.services.ai_classification_service._classify_with_gemini", return_value=None):
             result = classify_issue_content(issue)
 
-        self.assertEqual(result["category"], "Plumbing")
+        self.assertEqual(result["category"], "🚰 Plumbing")
+        self.assertEqual(result["assigned_expert"], "Plumber")
         self.assertEqual(result["urgency"], "high")
+
+    def test_classification_response_exposes_dashboard_detected_and_response(self):
+        response = IssueClassificationResponse.model_validate(
+            {
+                "id": 7,
+                "problem_type": "Home Appliances",
+                "category": "🧊 Home Appliances",
+                "priority": "medium",
+                "urgency": "medium",
+                "required_skills": ["Appliance Technician"],
+                "confidence_score": 0.9,
+                "detected": "The symptoms indicate a washing machine motor or spin-cycle fault.",
+                "response": "Matched the appliance and failure symptom to Home Appliances.",
+            }
+        )
+
+        self.assertTrue(response.detected.startswith("The symptoms"))
+        self.assertTrue(response.response.startswith("Matched the appliance"))

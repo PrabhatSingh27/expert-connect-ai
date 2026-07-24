@@ -3,11 +3,13 @@
 import os
 import shutil
 import uuid
+from hashlib import sha256
 
 from fastapi import HTTPException, UploadFile
 
 
-BASE_UPLOAD_DIR = "uploads"
+# Keep the legacy handler aligned with the current issue-media directory.
+BASE_UPLOAD_DIR = os.path.join("uploads", "users", "issues")
 
 ALLOWED_FILES = {
     "image": {
@@ -23,7 +25,7 @@ ALLOWED_FILES = {
         "max_size": 5 * 1024 * 1024,
     },
     "audio": {
-        "folder": "audio",
+        "folder": "audios",
         "mime_prefix": "audio/",
         "extensions": {".mp3", ".wav", ".aac", ".ogg", ".m4a"},
         "max_size": 10 * 1024 * 1024,
@@ -72,6 +74,31 @@ def save_file(file: UploadFile, file_type: str):
 
     upload_dir = os.path.join(BASE_UPLOAD_DIR, config["folder"])
     os.makedirs(upload_dir, exist_ok=True)
+
+    digest = sha256()
+    file.file.seek(0)
+    while chunk := file.file.read(1024 * 1024):
+        digest.update(chunk)
+    file.file.seek(0)
+    for stored_filename in os.listdir(upload_dir):
+        stored_path = os.path.join(upload_dir, stored_filename)
+        if not os.path.isfile(stored_path):
+            continue
+        try:
+            stored_digest = sha256()
+            with open(stored_path, "rb") as stored_file:
+                while chunk := stored_file.read(1024 * 1024):
+                    stored_digest.update(chunk)
+            if stored_digest.hexdigest() == digest.hexdigest():
+                return {
+                    "message": f"{file_type.capitalize()} already uploaded.",
+                    "original_filename": file.filename,
+                    "stored_filename": stored_filename,
+                    "content_type": file.content_type,
+                    "path": stored_path,
+                }
+        except OSError:
+            continue
 
     unique_filename = f"{uuid.uuid4()}{extension}"
     file_path = os.path.join(upload_dir, unique_filename)

@@ -44,6 +44,8 @@ def _apply_classification(issue: Issue, classification: dict) -> None:
     issue.required_skills = _skills_to_text(classification["required_skills"])
     issue.confidence_score = classification["confidence_score"]
     issue.ai_explanation = classification["ai_explanation"]
+    issue.detected = str(classification.get("reasoning") or classification["ai_explanation"])
+    issue.response = str(classification.get("thought_process") or classification["ai_explanation"])
     issue.status = "ai_classified"
 
 
@@ -201,7 +203,6 @@ def classify_issue(db: Session, issue_id: int, current_user_id: int):
     classification = classify_issue_content(issue)
 
     _apply_classification(issue, classification)
-
     db.commit()
     db.refresh(issue)
 

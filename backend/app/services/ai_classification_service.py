@@ -5,18 +5,77 @@ import json
 import logging
 import mimetypes
 import os
+import re
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 MAX_VIDEO_FRAMES = 5
 
+# Canonical routing contract. Categories and expert titles are intentionally
+# kept verbatim so every model/provider produces the same backend value.
+SERVICE_CATALOG = (
+    ("⚡ Electrical", "Electrician", ("fan", "switch", "power outage", "wiring", "mcb", "socket", "spark", "circuit", "electric")),
+    ("❄️ HVAC & Cooling", "AC/HVAC Technician", ("ac", "air conditioner", "cooler", "thermostat", "not cooling")),
+    ("🧊 Home Appliances", "Appliance Technician", ("refrigerator", "fridge", "washing machine", "microwave", "dishwasher", "mixer", "induction cooktop")),
+    ("🚰 Plumbing", "Plumber", ("tap", "drain", "pipe", "leak", "water heater", "clog", "plumbing")),
+    ("🏠 Carpentry", "Carpenter", ("door lock", "window", "furniture", "hinge", "cabinet", "carpentry")),
+    ("🎨 Painting & Wall Repair", "Painter/Mason", ("peeling paint", "damp wall", "ceiling damage", "paint", "wall crack")),
+    ("🧱 Masonry & Flooring", "Mason", ("broken tile", "floor crack", "concrete", "flooring", "tile", "masonry")),
+    ("🔐 Security Systems", "Security Technician", ("cctv", "smart lock", "doorbell", "alarm system", "security camera")),
+    ("📡 Internet & Networking", "Network Technician", ("wi-fi", "wifi", "router", "lan", "internet", "network")),
+    ("💻 Computers & Laptops", "Computer Technician", ("laptop", "slow pc", "operating system", "os installation", "printer", "computer")),
+    ("📱 Mobile Devices", "Mobile Repair Expert", ("mobile", "phone", "screen replacement", "charging", "battery")),
+    ("📺 Consumer Electronics", "Electronics Technician", ("tv", "speaker", "home theater", "gaming console", "electronics")),
+    ("🌞 Solar & Power Backup", "Solar/Power Technician", ("solar", "inverter", "ups", "power backup", "battery backup")),
+    ("🔥 Gas & Kitchen Equipment", "Kitchen Appliance Technician", ("gas stove", "chimney", "exhaust fan", "gas leak", "kitchen equipment")),
+    ("🌳 Outdoor & Garden", "Garden Equipment Technician", ("water pump", "lawn", "irrigation", "garden")),
+    ("🚗 Automobile", "Auto Mechanic", ("car", "vehicle", "puncture", "car battery", "servicing", "won't start")),
+    ("🧹 Cleaning Services", "Cleaning Professional", ("deep cleaning", "sofa cleaning", "cleaning", "cleanup")),
+    ("🐜 Pest Control", "Pest Control Expert", ("termite", "cockroach", "rodent", "mosquito", "pest")),
+    ("🛡️ Pest & Hygiene", "Hygiene Specialist", ("sanitization", "mold removal", "mould", "hygiene")),
+    ("❓ Other", "General Support", ()),
+)
+
+
+def _catalog_entry(value: str | None) -> tuple[str, str]:
+    """Map model/provider variations to one exact catalog entry."""
+    normalized = (value or "").casefold()
+    for category, expert, _ in SERVICE_CATALOG:
+        category_name = category.split(" ", 1)[-1].casefold()
+        if normalized and (normalized == category.casefold() or category_name in normalized or expert.casefold() in normalized):
+            return category, expert
+    return SERVICE_CATALOG[-1][:2]
+
+
+def _catalog_entry_for_text(text: str) -> tuple[str, str]:
+    normalized = text.casefold()
+    for category, expert, keywords in SERVICE_CATALOG[:-1]:
+        if any(re.search(rf"\b{re.escape(keyword)}\b", normalized) for keyword in keywords):
+            return category, expert
+    return SERVICE_CATALOG[-1][:2]
+
 
 def _resolve_local_path(saved_path: str | None) -> Path | None:
     if not saved_path or saved_path.startswith(("http://", "https://")):
         return None
     path = Path(saved_path)
-    return next((candidate for candidate in (path, BACKEND_ROOT / path) if candidate.is_file()), None)
+    existing_path = next((candidate for candidate in (path, BACKEND_ROOT / path) if candidate.is_file()), None)
+    if existing_path is not None:
+        return existing_path
+
+    # Preserve multimodal classification for issue records created before the
+    # media folders were consolidated under uploads/issue_media.
+    media_folder = path.parent.name.lower()
+    media_folders = {"images": "images", "videos": "videos", "audio": "audios", "audios": "audios"}
+    if media_folder in media_folders:
+        for migrated_path in (
+            BACKEND_ROOT / "uploads" / "users" / "issues" / media_folders[media_folder] / path.name,
+            BACKEND_ROOT / "uploads" / "issue_media" / media_folder / path.name,
+        ):
+            if migrated_path.is_file():
+                return migrated_path
+    return None
 
 
 def _attachment_metadata(issue) -> list[dict]:
@@ -102,11 +161,17 @@ def _build_prompt(issue, transcript: str | None = None) -> str:
     if transcript:
         payload["audio_transcription"] = transcript
     return (
-        "You are an AI triage assistant for a home-service platform. Use the issue text, "
-        "optional audio transcription, and optional images/video frames. Return ONLY valid JSON "
-        "with: problem_type, category, priority, urgency, required_skills, confidence_score, "
-        "ai_explanation. priority and urgency must each be low, medium, high, or critical; "
-        "confidence_score must be 0.0-1.0. Issue payload: " + json.dumps(payload, ensure_ascii=True)
+        "You are a multimodal service-routing engine. Weigh the text, optional audio transcription, "
+        "and supplied images/video frames together; clear visual evidence overrides a vague text description. "
+        "Choose exactly one primary category and expert from this catalog: "
+        + json.dumps(
+            [{"category": category, "assigned_expert": expert} for category, expert, _ in SERVICE_CATALOG],
+            ensure_ascii=False,
+        )
+        + ". Return ONLY valid JSON with: thought_process (a concise routing summary, not hidden reasoning), "
+        "category, assigned_expert, confidence_score (0.0-1.0), reasoning, problem_type, priority, urgency, "
+        "required_skills, ai_explanation. priority and urgency must each be low, medium, high, or critical. "
+        "Issue payload: " + json.dumps(payload, ensure_ascii=True)
     )
 
 
@@ -120,15 +185,17 @@ def _normalize_ai_response(data: dict) -> dict:
     except (TypeError, ValueError):
         confidence = 0.5
     confidence = confidence / 100 if confidence > 1 else confidence
-    skills = data.get("required_skills") or data.get("suggested_expert_skills") or "general technician"
-    if not isinstance(skills, list):
-        skills = [skill.strip() for skill in str(skills).split(",") if skill.strip()]
-    category = str(data.get("category") or data.get("category_prediction") or "General")
+    category, assigned_expert = _catalog_entry(
+        str(data.get("category") or data.get("category_prediction") or data.get("assigned_expert") or "")
+    )
+    reasoning = str(data.get("reasoning") or data.get("ai_explanation") or data.get("explanation") or
+                    f"Classified as {category} based on the supplied issue evidence.")
     return {"problem_type": str(data.get("problem_type") or data.get("problem") or "General"),
-            "category": category, "priority": priority, "urgency": urgency, "required_skills": skills,
+            "category": category, "assigned_expert": assigned_expert,
+            "thought_process": str(data.get("thought_process") or f"Matched the reported symptoms to {category}."),
+            "reasoning": reasoning, "priority": priority, "urgency": urgency, "required_skills": [assigned_expert],
             "confidence_score": max(0.0, min(confidence, 1.0)),
-            "ai_explanation": str(data.get("ai_explanation") or data.get("explanation") or
-                                  f"Classified as {category} from the supplied issue details.")}
+            "ai_explanation": reasoning}
 
 
 def _parse_json_response(content: str) -> dict | None:
@@ -185,21 +252,18 @@ def _classify_with_gemini(issue) -> dict | None:
 
 def _keyword_classification(issue) -> dict:
     text = f"{issue.title} {issue.description}".lower()
-    rules = [(("ac", "air conditioner"), "Air Conditioner", "Electrical", "electrician"),
-             (("fan", "switch", "socket"), "Electrical Fixture", "Electrical", "electrician"),
-             (("refrigerator", "washing machine"), "Home Appliance", "Electrical", "appliance technician"),
-             (("tap", "pipe", "leak", "water tank", "water"), "Water Leakage", "Plumbing", "plumber"),
-             (("door", "latch", "window", "furniture"), "Door or Furniture", "Carpentry", "carpenter"),
-             (("tile", "floor", "wall crack", "cement"), "Civil Repair", "Civil", "mason"),
-             (("tv", "speaker", "home theater"), "Electronics", "Electronics", "electronics technician")]
-    problem_type, category, skill = next(((p, c, s) for keywords, p, c, s in rules if any(k in text for k in keywords)),
-                                         ("General", "General", "general technician"))
+    category, assigned_expert = _catalog_entry_for_text(text)
     urgency = ("critical" if any(w in text for w in ("fire", "sparking", "shock", "burst", "flood")) else
                "high" if any(w in text for w in ("urgent", "tonight", "immediately", "emergency", "leaking", "not working")) else
                "medium" if any(w in text for w in ("soon", "today", "tomorrow")) else "low")
-    return {"problem_type": problem_type, "category": category, "priority": urgency, "urgency": urgency,
-            "required_skills": [skill], "confidence_score": 0.72 if category != "General" else 0.45,
-            "ai_explanation": f"Classified as {category} from the issue text; urgency is {urgency}."}
+    confidence = 0.72 if category != "❓ Other" else 0.45
+    reasoning = f"Reported symptoms best match {category}; urgency is {urgency}."
+    return {"problem_type": category.split(" ", 1)[-1], "category": category,
+            "assigned_expert": assigned_expert,
+            "thought_process": f"Matched the text symptoms to {category}.",
+            "reasoning": reasoning, "priority": urgency, "urgency": urgency,
+            "required_skills": [assigned_expert], "confidence_score": confidence,
+            "ai_explanation": reasoning}
 
 
 def classify_issue_content(issue) -> dict:

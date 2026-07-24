@@ -20,7 +20,13 @@ async def upload_image(
         raise HTTPException(status_code=422, detail="An image file is required")
 
     await validate_upload_file(upload, "image")
-    return {"profile_image_url": save_upload_file(upload, folder="profiles")}
+    return {
+        "profile_image_url": save_upload_file(
+            upload,
+            folder="users/profile_pic",
+            include_media_subfolder=False,
+        )
+    }
 
 
 @router.post("/video")
@@ -34,7 +40,7 @@ async def upload_video(
         raise HTTPException(status_code=422, detail="A video file is required")
 
     await validate_upload_file(upload, "video")
-    return {"video_path": save_upload_file(upload, folder="videos")}
+    return {"video_path": save_upload_file(upload, folder="users/issues")}
 
 
 @router.post("/audio")
@@ -48,4 +54,4 @@ async def upload_audio(
         raise HTTPException(status_code=422, detail="An audio file is required")
 
     await validate_upload_file(upload, "audio")
-    return {"audio_path": save_upload_file(upload, folder="audio")}
+    return {"audio_path": save_upload_file(upload, folder="users/issues")}

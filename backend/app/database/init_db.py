@@ -104,6 +104,8 @@ def ensure_database_schema() -> None:
         "required_skills": "TEXT",
         "confidence_score": "FLOAT",
         "ai_explanation": "TEXT",
+        "detected": "TEXT",
+        "response": "TEXT",
         "operator_note": "VARCHAR",
         "preferred_visit_date": "DATE",
         "preferred_time": "VARCHAR",
@@ -121,6 +123,14 @@ def ensure_database_schema() -> None:
     for column_name, column_definition in issue_defaults.items():
         if column_name not in issue_columns:
             _execute(f"ALTER TABLE issues ADD COLUMN {column_name} {column_definition}")
+    _execute(
+        "UPDATE issues SET detected = ai_explanation "
+        "WHERE detected IS NULL AND ai_explanation IS NOT NULL"
+    )
+    _execute(
+        "UPDATE issues SET response = ai_explanation "
+        "WHERE response IS NULL AND ai_explanation IS NOT NULL"
+    )
     if "status" in issue_columns:
         _execute("ALTER TABLE issues ALTER COLUMN status SET DEFAULT 'submitted'")
 

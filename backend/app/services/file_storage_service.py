@@ -2,6 +2,7 @@
 
 import os
 import uuid
+from hashlib import sha256
 from pathlib import Path
 from typing import Optional
 
@@ -17,6 +18,7 @@ from app.models.issue_attachment import IssueAttachment
 # ============================================================
 
 BASE_UPLOAD_DIR = Path("uploads")
+ISSUE_MEDIA_DIR = BASE_UPLOAD_DIR / "users" / "issues"
 
 
 # ============================================================
@@ -51,7 +53,7 @@ ALLOWED_FILES = {
     },
 
     "audio": {
-        "folder": "audio",
+        "folder": "audios",
         "mime_prefix": "audio/",
         "extensions": {
             ".mp3",
@@ -62,6 +64,13 @@ ALLOWED_FILES = {
             ".webm",
         },
         "max_size": 2 * 1024 * 1024,  # 2 MB
+    },
+
+    "document": {
+        "folder": "documents",
+        "mime_prefix": "",
+        "extensions": {".pdf", ".txt", ".doc", ".docx"},
+        "max_size": 10 * 1024 * 1024,
     },
 }
 
@@ -107,6 +116,39 @@ def _get_file_size(file: UploadFile) -> int:
     file.file.seek(0)
 
     return file_size
+
+
+def _upload_digest(file: UploadFile) -> str:
+    """Hash an upload without consuming it for the subsequent save."""
+    digest = sha256()
+    file.file.seek(0)
+    while chunk := file.file.read(1024 * 1024):
+        digest.update(chunk)
+    file.file.seek(0)
+    return digest.hexdigest()
+
+
+def _file_digest(path: Path) -> str:
+    digest = sha256()
+    with path.open("rb") as saved_file:
+        while chunk := saved_file.read(1024 * 1024):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _identical_file_in(directory: Path, content_digest: str) -> Path | None:
+    """Find the same content in one managed storage directory."""
+    if not directory.is_dir():
+        return None
+    for candidate in directory.iterdir():
+        if candidate.is_file() and candidate.name != ".gitkeep":
+            try:
+                if _file_digest(candidate) == content_digest:
+                    return candidate
+            except OSError:
+                # An unrelated corrupt/deleted file must not prevent uploads.
+                continue
+    return None
 
 
 # ============================================================
@@ -303,15 +345,16 @@ def validate_single_issue_media_uploads(
 def save_upload_file(
     upload_file: Optional[UploadFile],
     folder: str = "general",
+    *,
+    file_type: Optional[str] = None,
+    include_media_subfolder: bool = True,
 ) -> Optional[str]:
 
     if not _has_upload(upload_file):
 
         return None
 
-    file_type = infer_file_type(
-        upload_file
-    )
+    file_type = file_type or infer_file_type(upload_file)
 
     validate_file(
         upload_file,
@@ -320,16 +363,18 @@ def save_upload_file(
 
     config = ALLOWED_FILES[file_type]
 
-    upload_dir = (
-        BASE_UPLOAD_DIR
-        / folder
-        / config["folder"]
-    )
+    upload_dir = BASE_UPLOAD_DIR / folder
+    if include_media_subfolder:
+        upload_dir = upload_dir / config["folder"]
 
     upload_dir.mkdir(
         parents=True,
         exist_ok=True,
     )
+
+    existing_file = _identical_file_in(upload_dir, _upload_digest(upload_file))
+    if existing_file is not None:
+        return str(existing_file)
 
     extension = _get_extension(
         upload_file
@@ -426,17 +471,29 @@ def save_issue_attachment(
     # CREATE DIRECTORY
     # --------------------------------------------------------
 
-    upload_dir = (
-        BASE_UPLOAD_DIR
-        / "issues"
-        / str(issue.id)
-        / config["folder"]
-    )
+    # Issue media now has one dedicated, flat UUID-based storage tree.  The
+    # UUID filename already prevents collisions, so an issue-ID subdirectory
+    # is unnecessary and would recreate the removed uploads/issues layout.
+    upload_dir = ISSUE_MEDIA_DIR / config["folder"]
 
     upload_dir.mkdir(
         parents=True,
         exist_ok=True,
     )
+
+    upload_digest = _upload_digest(file)
+    # Prevent duplicate attachment records when an issue edit or client retry
+    # submits exactly the same media again.  Scope this to one issue so media
+    # deletion for another issue can never affect it.
+    for existing_attachment in getattr(issue, "attachments", []) or []:
+        existing_path = Path(existing_attachment.file_url)
+        if not existing_path.is_absolute():
+            existing_path = (Path.cwd() / existing_path).resolve()
+        try:
+            if existing_path.is_file() and _file_digest(existing_path) == upload_digest:
+                return existing_attachment
+        except OSError:
+            continue
 
     # --------------------------------------------------------
     # UNIQUE FILE NAME

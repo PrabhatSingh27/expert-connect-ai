@@ -70,14 +70,23 @@ async def expert_signup(
         email=email,
         phone=phone,
         government_id=government_id,
-        government_id_file_url=save_upload_file(government_id_document, "experts/government_ids"),
+        government_id_file_url=save_upload_file(
+            government_id_document,
+            "experts/government_id",
+            file_type="document",
+            include_media_subfolder=False,
+        ),
         skills=skills,
         service_area=service_area,
         service_city=service_city,
         service_pincodes=service_pincodes,
         bio=bio,
         permanent_address=permanent_address,
-        profile_image_url=save_upload_file(profile_image, "experts/profile_images"),
+        profile_image_url=save_upload_file(
+            profile_image,
+            "experts/profile_pic",
+            include_media_subfolder=False,
+        ),
         experience_years=experience_years,
         password=password,
     )
@@ -158,8 +167,17 @@ async def update_profile(
         "bio": bio,
         "permanent_address": permanent_address,
         "experience_years": experience_years,
-        "profile_image_url": save_upload_file(profile_image, "experts/profile_images"),
-        "government_id_file_url": save_upload_file(government_id_document, "experts/government_ids"),
+        "profile_image_url": save_upload_file(
+            profile_image,
+            "experts/profile_pic",
+            include_media_subfolder=False,
+        ),
+        "government_id_file_url": save_upload_file(
+            government_id_document,
+            "experts/government_id",
+            file_type="document",
+            include_media_subfolder=False,
+        ),
     }
     profile_data = ExpertUpdate.model_validate(
         {key: value for key, value in update_payload.items() if value is not None}

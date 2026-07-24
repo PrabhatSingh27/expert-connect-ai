@@ -1,8 +1,12 @@
 import asyncio
+from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
+from fastapi.responses import RedirectResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.auth import router as auth_router
 from app.api.user import router as user_router
@@ -33,6 +37,8 @@ def _user_can_use_realtime(user: User) -> bool:
 
 configure_logging()
 app = FastAPI(openapi_version="3.0.3")
+BACKEND_ROOT = Path(__file__).resolve().parent
+UPLOADS_ROOT = BACKEND_ROOT / "uploads"
 
 app.add_middleware(
     CORSMiddleware,
@@ -65,6 +71,23 @@ def root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/uploads/profiles/images/{filename:path}", include_in_schema=False)
+def redirect_legacy_user_profile_image(filename: str):
+    """Keep old database image URLs working after the profile folder move."""
+    if not filename or Path(filename).name != filename:
+        raise HTTPException(status_code=404, detail="Profile image not found")
+    return RedirectResponse(
+        url=f"/uploads/users/profile_pic/{quote(filename)}",
+        status_code=307,
+    )
+
+
+# This mount serves /uploads/users/profile_pic/... and
+# /uploads/experts/profile_pic/... using the current hierarchical layout.
+UPLOADS_ROOT.mkdir(parents=True, exist_ok=True)
+app.mount("/uploads", StaticFiles(directory=UPLOADS_ROOT), name="uploads")
 
 
 @app.on_event("startup")

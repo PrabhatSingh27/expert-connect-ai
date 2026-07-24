@@ -126,4 +126,23 @@ def _resolve_upload_path(stored_path: str) -> Path:
     except ValueError:
         # A database value outside our managed upload root must never be served.
         raise HTTPException(status_code=404, detail="Media file not found")
+
+    if candidate.is_file():
+        return candidate
+
+    # Existing database rows can still reference the removed
+    # uploads/issues/<id>/<type> layout. Their UUID filename is stable, so
+    # resolve it in the renamed issue_media tree without trusting any request
+    # path component.
+    media_folder = Path(stored_path).parent.name.lower()
+    media_folders = {"images": "images", "videos": "videos", "audio": "audios", "audios": "audios"}
+    if media_folder in media_folders:
+        # Current target directory, followed by the immediately previous one
+        # for a rollback-safe transition.
+        for migrated_path in (
+            UPLOAD_ROOT / "users" / "issues" / media_folders[media_folder] / candidate.name,
+            UPLOAD_ROOT / "issue_media" / media_folder / candidate.name,
+        ):
+            if migrated_path.is_file():
+                return migrated_path
     return candidate

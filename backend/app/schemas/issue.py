@@ -124,6 +124,8 @@ class IssueResponse(CamelModel):
     required_skills: list[str] | None = None
     confidence_score: float | None = None
     ai_explanation: str | None = None
+    detected: str | None = None
+    response: str | None = None
     operator_note: str | None = None
 
     status: str
@@ -180,6 +182,9 @@ class IssueClassificationResponse(CamelModel):
     required_skills: list[str]
     confidence_score: float | None = None
     ai_explanation: str | None = None
+    # Dashboard-specific aliases of the AI routing payload.
+    detected: str | None = None
+    response: str | None = None
 
     @field_validator("required_skills", mode="before")
     @classmethod

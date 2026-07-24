@@ -35,3 +35,11 @@ class FileHandlerTests(TestCase):
             save_file(_upload("photo.png", "audio/mpeg", b"audio"), "image")
 
         self.assertEqual(error.exception.status_code, 400)
+
+    def test_save_file_reuses_an_identical_upload(self):
+        with TemporaryDirectory() as directory:
+            with patch("app.utils.file_handler.BASE_UPLOAD_DIR", directory):
+                first = save_file(_upload("a.png", "image/png", b"same-image"), "image")
+                second = save_file(_upload("b.png", "image/png", b"same-image"), "image")
+
+        self.assertEqual(first["path"], second["path"])
