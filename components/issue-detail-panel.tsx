@@ -42,7 +42,6 @@ export function IssueDetailPanel({ issue, role, onChanged }: Props) {
     skills: expert?.skills || detail.assignedExpert?.skills || detail.expert?.skills,
   }), [assignedExpertId, detail, expert]);
   const averageRating = getAverageRating(reviews) ?? expert?.rating ?? detail.assignedExpert?.rating ?? detail.expert?.rating ?? null;
-
   async function load() {
     try {
       const fresh = await getIssue(issue.id);

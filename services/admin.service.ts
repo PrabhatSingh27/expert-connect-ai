@@ -1,7 +1,7 @@
-import { apiRequest } from "./http";
+import { apiRequest, assetUrl } from "./http";
 import type { Expert } from "./experts.service";
 import type { Issue } from "./issues.service";
-export type AdminUser = { id: string | number; name: string; email: string; role: string; status: "active" | "suspended"; isActive?: boolean; createdAt?: string };
+export type AdminUser = { id: string | number; name: string; email: string; role: string; status: "active" | "suspended"; isActive?: boolean; createdAt?: string; profileImageUrl?: string; profile_image_url?: string; avatarUrl?: string };
 export type AdminOverview = { totalUsers: number; totalExperts?: number; totalVerifiedExperts?: number; totalIssues: number; openIssues?: number; activeExperts?: number; issuesByStatus?: Record<string, number>; operators?: number };
 type RawAdminOverview = AdminOverview & Record<string, any>;
 function normalizeOverview(raw: RawAdminOverview): AdminOverview {
@@ -9,7 +9,8 @@ function normalizeOverview(raw: RawAdminOverview): AdminOverview {
 }
 function normalizeUser(user: AdminUser & Record<string, any>): AdminUser {
   const isActive = user.isActive ?? user.is_active ?? user.status === "active";
-  return { ...user, id: user.id, name: user.name || user.email, isActive, status: isActive ? "active" : "suspended", createdAt: user.createdAt ?? user.created_at };
+  const profileImageUrl = assetUrl(user.profileImageUrl ?? user.profile_image_url ?? user.avatarUrl ?? user.avatar_url ?? user.photoUrl ?? user.photo_url);
+  return { ...user, id: user.id, name: user.name || user.email, isActive, status: isActive ? "active" : "suspended", createdAt: user.createdAt ?? user.created_at, profileImageUrl, profile_image_url: profileImageUrl, avatarUrl: profileImageUrl };
 }
 export async function getAdminOverview() { return normalizeOverview(await apiRequest<RawAdminOverview>("/admin/overview")); }
 export const getNormalizedAdminOverview = getAdminOverview;
