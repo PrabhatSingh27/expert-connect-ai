@@ -63,7 +63,6 @@ export default function CustomerPage() {
 
   const active = useMemo(() => issues.filter((issue) => !["closed", "completed", "rejected"].includes(issue.status)).length, [issues]);
   const profilePhoto = profilePreview || profile?.profileImageUrl || profile?.profile_image_url || profile?.avatarUrl;
-
   function chooseProfileImage(file?: File) {
     if (!file) return;
     if (!file.type.startsWith("image/")) return toast("Profile picture must be an image.", "error");
